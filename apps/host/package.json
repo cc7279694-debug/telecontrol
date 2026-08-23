@@ -1,0 +1,16 @@
+{
+  "name": "@codex-remote/host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@codex-remote/protocol": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  }
+}
+

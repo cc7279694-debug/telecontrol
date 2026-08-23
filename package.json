@@ -1,0 +1,23 @@
+{
+  "name": "codex-remote",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@11.5.1",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  }
+}
+
