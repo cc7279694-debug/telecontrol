@@ -10,6 +10,8 @@ describe("device encryption", () => {
   it("derives the same AES key on both devices and round-trips JSON", async () => {
     const alice = await generateP256KeyPair();
     const bob = await generateP256KeyPair();
+    expect(alice.privateKey.extractable).toBe(false);
+    expect(bob.privateKey.extractable).toBe(false);
     const aliceKey = await deriveAesSessionKey(alice.privateKey, bob.publicKey);
     const bobKey = await deriveAesSessionKey(bob.privateKey, alice.publicKey);
 

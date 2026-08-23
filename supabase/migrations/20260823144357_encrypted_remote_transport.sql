@@ -6,6 +6,7 @@ create schema if not exists private;
 create table public.hosts (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users (id) on delete cascade,
+  auth_session_id text not null check (char_length(auth_session_id) between 1 and 200),
   name text not null check (char_length(name) between 1 and 100),
   public_key text not null check (char_length(public_key) between 1 and 4096),
   version text not null check (char_length(version) between 1 and 50),
@@ -19,6 +20,7 @@ create table public.hosts (
 create table public.devices (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users (id) on delete cascade,
+  auth_session_id text not null check (char_length(auth_session_id) between 1 and 200),
   name text not null check (char_length(name) between 1 and 100),
   public_key text not null check (char_length(public_key) between 1 and 4096),
   last_online_at timestamptz,
@@ -68,7 +70,8 @@ create table public.remote_commands (
   created_at timestamptz not null default now(),
   started_at timestamptz,
   completed_at timestamptz,
-  unique (host_id, idempotency_key)
+  unique (host_id, idempotency_key),
+  unique (message_id)
 );
 
 create table public.audit_events (
@@ -86,8 +89,10 @@ create table private.pairing_requests (
   owner_id uuid not null references auth.users (id) on delete cascade,
   host_id uuid not null references public.hosts (id) on delete cascade,
   code_hash text not null check (char_length(code_hash) between 1 and 256),
+  created_session_id text not null check (char_length(created_session_id) between 1 and 200),
   expires_at timestamptz not null,
   consumed_at timestamptz,
+  consumed_by_device_id uuid references public.devices (id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -105,7 +110,9 @@ create table private.push_subscriptions (
 );
 
 create index hosts_owner_id_idx on public.hosts (owner_id);
+create index hosts_session_id_idx on public.hosts (auth_session_id);
 create index devices_owner_id_idx on public.devices (owner_id);
+create index devices_session_id_idx on public.devices (auth_session_id);
 create index links_owner_id_idx on public.host_device_links (owner_id);
 create index commands_host_status_idx on public.remote_commands (host_id, status, created_at);
 create index commands_expires_at_idx on public.remote_commands (expires_at);
@@ -123,38 +130,86 @@ revoke all on public.hosts, public.devices, public.host_device_links,
   public.remote_commands, public.audit_events from anon, authenticated;
 grant select, insert, update, delete on public.hosts, public.devices,
   public.host_device_links to authenticated;
-grant select, insert, update on public.remote_commands to authenticated;
+grant select, insert on public.remote_commands to authenticated;
 grant select, insert on public.audit_events to authenticated;
 revoke all on all tables in schema private from anon, authenticated;
 
+create or replace function private.has_active_client_session(p_owner_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select p_owner_id is not null
+    and p_owner_id = auth.uid()
+    and (
+      exists (
+        select 1 from public.hosts h
+        where h.owner_id = p_owner_id
+          and h.auth_session_id = (select auth.jwt() ->> 'session_id')
+          and h.revoked_at is null
+      )
+      or exists (
+        select 1 from public.devices d
+        where d.owner_id = p_owner_id
+          and d.auth_session_id = (select auth.jwt() ->> 'session_id')
+          and d.revoked_at is null
+      )
+    );
+$$;
+
+revoke all on function private.has_active_client_session(uuid) from public, anon;
+grant execute on function private.has_active_client_session(uuid) to authenticated;
+
 create policy hosts_owner_select on public.hosts
-  for select to authenticated using ((select auth.uid()) = owner_id);
+  for select to authenticated
+  using ((select private.has_active_client_session(owner_id)));
 create policy hosts_owner_insert on public.hosts
-  for insert to authenticated with check ((select auth.uid()) = owner_id);
+  for insert to authenticated
+  with check (
+    (select auth.uid()) = owner_id
+    and auth_session_id = (select auth.jwt() ->> 'session_id')
+  );
 create policy hosts_owner_update on public.hosts
   for update to authenticated
-  using ((select auth.uid()) = owner_id)
-  with check ((select auth.uid()) = owner_id);
+  using ((select private.has_active_client_session(owner_id)))
+  with check (
+    (select auth.uid()) = owner_id
+    and auth_session_id = (select auth.jwt() ->> 'session_id')
+  );
 create policy hosts_owner_delete on public.hosts
-  for delete to authenticated using ((select auth.uid()) = owner_id);
+  for delete to authenticated
+  using ((select private.has_active_client_session(owner_id)));
 
 create policy devices_owner_select on public.devices
-  for select to authenticated using ((select auth.uid()) = owner_id);
+  for select to authenticated
+  using ((select private.has_active_client_session(owner_id)));
 create policy devices_owner_insert on public.devices
-  for insert to authenticated with check ((select auth.uid()) = owner_id);
+  for insert to authenticated
+  with check (
+    (select auth.uid()) = owner_id
+    and auth_session_id = (select auth.jwt() ->> 'session_id')
+  );
 create policy devices_owner_update on public.devices
   for update to authenticated
-  using ((select auth.uid()) = owner_id)
-  with check ((select auth.uid()) = owner_id);
+  using ((select private.has_active_client_session(owner_id)))
+  with check (
+    (select auth.uid()) = owner_id
+    and auth_session_id = (select auth.jwt() ->> 'session_id')
+  );
 create policy devices_owner_delete on public.devices
-  for delete to authenticated using ((select auth.uid()) = owner_id);
+  for delete to authenticated
+  using ((select private.has_active_client_session(owner_id)));
 
 create policy links_owner_select on public.host_device_links
-  for select to authenticated using ((select auth.uid()) = owner_id);
+  for select to authenticated
+  using ((select private.has_active_client_session(owner_id)));
 create policy links_owner_insert on public.host_device_links
   for insert to authenticated
   with check (
     (select auth.uid()) = owner_id
+    and (select private.has_active_client_session(owner_id))
     and exists (
       select 1 from public.hosts h
       where h.id = host_id and h.owner_id = (select auth.uid()) and h.revoked_at is null
@@ -166,34 +221,75 @@ create policy links_owner_insert on public.host_device_links
   );
 create policy links_owner_update on public.host_device_links
   for update to authenticated
-  using ((select auth.uid()) = owner_id)
-  with check ((select auth.uid()) = owner_id);
+  using ((select private.has_active_client_session(owner_id)))
+  with check (
+    (select auth.uid()) = owner_id
+    and exists (
+      select 1 from public.hosts h
+      where h.id = host_id and h.owner_id = (select auth.uid()) and h.revoked_at is null
+    )
+    and exists (
+      select 1 from public.devices d
+      where d.id = device_id and d.owner_id = (select auth.uid()) and d.revoked_at is null
+    )
+  );
 create policy links_owner_delete on public.host_device_links
-  for delete to authenticated using ((select auth.uid()) = owner_id);
+  for delete to authenticated
+  using ((select private.has_active_client_session(owner_id)));
 
 create policy commands_owner_select on public.remote_commands
-  for select to authenticated using ((select auth.uid()) = owner_id);
+  for select to authenticated
+  using (
+    (select private.has_active_client_session(owner_id))
+    and (
+      exists (
+        select 1 from public.hosts h
+        where h.id = host_id
+          and h.auth_session_id = (select auth.jwt() ->> 'session_id')
+          and h.revoked_at is null
+      )
+      or exists (
+        select 1 from public.devices d
+        where d.id = device_id
+          and d.auth_session_id = (select auth.jwt() ->> 'session_id')
+          and d.revoked_at is null
+      )
+    )
+  );
 create policy commands_owner_insert on public.remote_commands
   for insert to authenticated
   with check (
     (select auth.uid()) = owner_id
+    and (select private.has_active_client_session(owner_id))
+    and exists (
+      select 1 from public.devices d
+      where d.id = public.remote_commands.device_id
+        and d.owner_id = (select auth.uid())
+        and d.auth_session_id = (select auth.jwt() ->> 'session_id')
+        and d.revoked_at is null
+    )
     and exists (
       select 1 from public.host_device_links l
+      join public.hosts h on h.id = l.host_id
+      join public.devices d on d.id = l.device_id
       where l.owner_id = (select auth.uid())
         and l.host_id = public.remote_commands.host_id
         and l.device_id = public.remote_commands.device_id
         and l.revoked_at is null
+        and h.revoked_at is null
+        and d.revoked_at is null
     )
   );
-create policy commands_owner_update on public.remote_commands
-  for update to authenticated
-  using ((select auth.uid()) = owner_id)
-  with check ((select auth.uid()) = owner_id);
 
 create policy audit_owner_select on public.audit_events
-  for select to authenticated using ((select auth.uid()) = owner_id);
+  for select to authenticated
+  using ((select private.has_active_client_session(owner_id)));
 create policy audit_owner_insert on public.audit_events
-  for insert to authenticated with check ((select auth.uid()) = owner_id);
+  for insert to authenticated
+  with check (
+    (select auth.uid()) = owner_id
+    and (select private.has_active_client_session(owner_id))
+  );
 
 create or replace function public.claim_remote_command(
   p_host_id uuid,
@@ -202,18 +298,42 @@ create or replace function public.claim_remote_command(
 )
 returns setof public.remote_commands
 language plpgsql
-set search_path = public
+security definer
+set search_path = pg_catalog, public
 as $$
 begin
+  if auth.uid() is null
+     or p_lease_owner is distinct from (select auth.jwt() ->> 'session_id') then
+    raise exception 'Invalid host session';
+  end if;
+  if p_lease_seconds < 5 or p_lease_seconds > 60 then
+    raise exception 'Lease duration must be between 5 and 60 seconds';
+  end if;
+  if not exists (
+    select 1 from public.hosts h
+    where h.id = p_host_id
+      and h.owner_id = auth.uid()
+      and h.auth_session_id = (select auth.jwt() ->> 'session_id')
+      and h.revoked_at is null
+  ) then
+    raise exception 'Host session is not authorized';
+  end if;
+
   return query
   with candidate as (
     select c.id
     from public.remote_commands c
     where c.host_id = p_host_id
       and c.expires_at > now()
-      and (
-        c.status = 'queued'
-        or (c.status = 'leased' and c.lease_expires_at < now())
+      and c.status = 'queued'
+      and exists (
+        select 1
+        from public.host_device_links l
+        join public.devices d on d.id = l.device_id
+        where l.host_id = c.host_id
+          and l.device_id = c.device_id
+          and l.revoked_at is null
+          and d.revoked_at is null
       )
     order by c.created_at
     for update skip locked
@@ -232,6 +352,179 @@ $$;
 revoke all on function public.claim_remote_command(uuid, text, integer) from public, anon;
 grant execute on function public.claim_remote_command(uuid, text, integer) to authenticated;
 
+create or replace function public.complete_remote_command(
+  p_host_id uuid,
+  p_message_id uuid,
+  p_lease_owner text,
+  p_status text,
+  p_result_nonce text default null,
+  p_result_ciphertext text default null,
+  p_error_code text default null
+)
+returns public.remote_commands
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  completed_command public.remote_commands;
+begin
+  if auth.uid() is null
+     or p_lease_owner is distinct from (select auth.jwt() ->> 'session_id') then
+    raise exception 'Invalid host session';
+  end if;
+  if p_status not in ('completed', 'failed', 'expired') then
+    raise exception 'Invalid command completion status';
+  end if;
+  if not exists (
+    select 1 from public.hosts h
+    where h.id = p_host_id
+      and h.owner_id = auth.uid()
+      and h.auth_session_id = (select auth.jwt() ->> 'session_id')
+      and h.revoked_at is null
+  ) then
+    raise exception 'Host session is not authorized';
+  end if;
+
+  update public.remote_commands c
+  set status = p_status,
+      result_nonce = p_result_nonce,
+      result_ciphertext = p_result_ciphertext,
+      error_code = p_error_code,
+      lease_expires_at = null,
+      completed_at = now()
+  where c.owner_id = auth.uid()
+    and c.host_id = p_host_id
+    and c.message_id = p_message_id
+    and c.status = 'leased'
+    and c.lease_owner = p_lease_owner
+  returning c.* into completed_command;
+
+  if not found then
+    raise exception 'Command is not leased by this host session';
+  end if;
+  return completed_command;
+end;
+$$;
+
+revoke all on function public.complete_remote_command(
+  uuid, uuid, text, text, text, text, text
+) from public, anon;
+grant execute on function public.complete_remote_command(
+  uuid, uuid, text, text, text, text, text
+) to authenticated;
+
+create or replace function public.create_pairing_request(
+  p_host_id uuid,
+  p_code_hash text,
+  p_expires_at timestamptz
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = pg_catalog, public, private
+as $$
+declare
+  pairing_id uuid;
+begin
+  if auth.uid() is null
+     or p_code_hash is null
+     or p_code_hash !~ '^[0-9a-fA-F]{64}$'
+     or p_expires_at <= now()
+     or p_expires_at > now() + interval '5 minutes' then
+    raise exception 'Invalid pairing request';
+  end if;
+  if not exists (
+    select 1 from public.hosts h
+    where h.id = p_host_id
+      and h.owner_id = auth.uid()
+      and h.auth_session_id = (select auth.jwt() ->> 'session_id')
+      and h.revoked_at is null
+  ) then
+    raise exception 'Host session is not authorized';
+  end if;
+
+  insert into private.pairing_requests (
+    owner_id, host_id, code_hash, created_session_id, expires_at
+  ) values (
+    auth.uid(), p_host_id, p_code_hash,
+    (select auth.jwt() ->> 'session_id'), p_expires_at
+  ) returning id into pairing_id;
+  return pairing_id;
+end;
+$$;
+
+revoke all on function public.create_pairing_request(uuid, text, timestamptz)
+  from public, anon;
+grant execute on function public.create_pairing_request(uuid, text, timestamptz)
+  to authenticated;
+
+create or replace function public.consume_pairing_request(
+  p_host_id uuid,
+  p_code_hash text,
+  p_device_id uuid
+)
+returns public.host_device_links
+language plpgsql
+security definer
+set search_path = pg_catalog, public, private
+as $$
+declare
+  pairing_id uuid;
+  linked_host_device public.host_device_links;
+begin
+  if auth.uid() is null
+     or p_code_hash is null
+     or p_code_hash !~ '^[0-9a-fA-F]{64}$' then
+    raise exception 'Invalid pairing request';
+  end if;
+  if not exists (
+    select 1 from public.devices d
+    where d.id = p_device_id
+      and d.owner_id = auth.uid()
+      and d.auth_session_id = (select auth.jwt() ->> 'session_id')
+      and d.revoked_at is null
+  ) then
+    raise exception 'Device session is not authorized';
+  end if;
+
+  select pr.id into pairing_id
+  from private.pairing_requests pr
+  join public.hosts h on h.id = pr.host_id
+  where pr.host_id = p_host_id
+    and pr.owner_id = auth.uid()
+    and pr.code_hash = p_code_hash
+    and pr.consumed_at is null
+    and pr.expires_at > now()
+    and h.revoked_at is null
+  order by pr.created_at desc
+  limit 1
+  for update of pr;
+
+  if pairing_id is null then
+    raise exception 'Pairing request is invalid or expired';
+  end if;
+
+  insert into public.host_device_links (owner_id, host_id, device_id)
+  values (auth.uid(), p_host_id, p_device_id)
+  returning * into linked_host_device;
+
+  update private.pairing_requests
+  set consumed_at = now(), consumed_by_device_id = p_device_id
+  where id = pairing_id;
+
+  return linked_host_device;
+exception
+  when unique_violation then
+    raise exception 'Device is already linked to this host';
+end;
+$$;
+
+revoke all on function public.consume_pairing_request(uuid, text, uuid)
+  from public, anon;
+grant execute on function public.consume_pairing_request(uuid, text, uuid)
+  to authenticated;
+
 -- Realtime keeps ownership policies in realtime.messages. The dashboard/project
 -- setting must also disable public channel access; this migration never changes
 -- the locked realtime schema itself.
@@ -243,10 +536,18 @@ using (
     select 1
     from public.hosts h
     join public.host_device_links l on l.host_id = h.id
+    join public.devices d on d.id = l.device_id
     where (select realtime.topic()) = 'host:' || h.id::text
       and h.owner_id = (select auth.uid())
       and l.owner_id = (select auth.uid())
       and l.revoked_at is null
+      and h.revoked_at is null
+      and d.revoked_at is null
+      and (
+        d.auth_session_id = (select auth.jwt() ->> 'session_id')
+        or h.auth_session_id = (select auth.jwt() ->> 'session_id')
+      )
+      and (select private.has_active_client_session(h.owner_id))
   )
 );
 
@@ -258,9 +559,17 @@ with check (
     select 1
     from public.hosts h
     join public.host_device_links l on l.host_id = h.id
+    join public.devices d on d.id = l.device_id
     where (select realtime.topic()) = 'host:' || h.id::text
       and h.owner_id = (select auth.uid())
       and l.owner_id = (select auth.uid())
       and l.revoked_at is null
+      and h.revoked_at is null
+      and d.revoked_at is null
+      and (
+        d.auth_session_id = (select auth.jwt() ->> 'session_id')
+        or h.auth_session_id = (select auth.jwt() ->> 'session_id')
+      )
+      and (select private.has_active_client_session(h.owner_id))
   )
 );

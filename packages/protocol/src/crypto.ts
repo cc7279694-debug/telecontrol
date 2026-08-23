@@ -17,9 +17,17 @@ export async function generateP256KeyPair(): Promise<DeviceKeyPair> {
     true,
     ["deriveBits"],
   )) as CryptoKeyPair;
+  const privateJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
+  const nonExportablePrivateKey = await crypto.subtle.importKey(
+    "jwk",
+    privateJwk,
+    { name: "ECDH", namedCurve: "P-256" },
+    false,
+    ["deriveBits"],
+  );
 
   return {
-    privateKey: keyPair.privateKey,
+    privateKey: nonExportablePrivateKey,
     publicKey: await crypto.subtle.exportKey("jwk", keyPair.publicKey),
   };
 }

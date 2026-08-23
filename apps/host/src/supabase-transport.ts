@@ -27,6 +27,7 @@ export interface SupabaseTransportChannel {
     callback: (payload: unknown) => void,
   ): SupabaseTransportChannel;
   subscribe(callback: (status: string) => void): SupabaseTransportChannel;
+  send(message: unknown): Promise<string>;
   unsubscribe(): Promise<string>;
 }
 
@@ -52,6 +53,7 @@ export interface TransportContext {
   hostId: string;
   deviceId: string;
   ownerId: string;
+  /** Supabase Auth JWT session_id used to bind host leases and completions. */
   leaseOwner: string;
 }
 
@@ -205,6 +207,41 @@ export class SupabaseTransport {
     return () => this.handlers.delete(handler);
   }
 
+  async sendEvent(envelope: RemoteEnvelope): Promise<void> {
+    const context = this.requireContext();
+    if (
+      envelope.hostId !== context.hostId ||
+      envelope.deviceId !== context.deviceId
+    ) {
+      throw new Error("Event recipient does not match transport context");
+    }
+    if (Date.parse(envelope.expiresAt) <= Date.now()) {
+      throw new Error("Event envelope has expired");
+    }
+    const result = await this.requireChannel().send({
+      type: "broadcast",
+      event: "host.event",
+      payload: envelope,
+    });
+    if (result !== "ok") {
+      throw new Error(`Supabase broadcast failed: ${result}`);
+    }
+  }
+
+  async heartbeat(): Promise<void> {
+    const context = this.requireContext();
+    const now = new Date().toISOString();
+    const response = await this.client
+      .from("hosts")
+      .update({ last_online_at: now, updated_at: now })
+      .eq("id", context.hostId)
+      .select("id")
+      .single<{ id: string }>();
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+  }
+
   async getPresence(hostId: string): Promise<HostPresence> {
     const response = await this.client
       .from("hosts")
@@ -256,19 +293,15 @@ export class SupabaseTransport {
     errorCode?: string;
   }): Promise<void> {
     const context = this.requireContext();
-    const response = await this.client
-      .from("remote_commands")
-      .update({
-        status: input.status,
-        result_nonce: input.result?.nonce ?? null,
-        result_ciphertext: input.result?.ciphertext ?? null,
-        error_code: input.errorCode ?? null,
-        completed_at: new Date().toISOString(),
-      })
-      .eq("host_id", context.hostId)
-      .eq("message_id", input.messageId)
-      .select("message_id")
-      .single<{ message_id: string }>();
+    const response = await this.client.rpc("complete_remote_command", {
+      p_host_id: context.hostId,
+      p_message_id: input.messageId,
+      p_lease_owner: context.leaseOwner,
+      p_status: input.status,
+      p_result_nonce: input.result?.nonce ?? null,
+      p_result_ciphertext: input.result?.ciphertext ?? null,
+      p_error_code: input.errorCode ?? null,
+    });
     if (response.error) {
       throw new Error(response.error.message);
     }
@@ -279,6 +312,13 @@ export class SupabaseTransport {
       throw new Error("Supabase transport is not connected");
     }
     return this.context;
+  }
+
+  private requireChannel(): SupabaseTransportChannel {
+    if (!this.channel) {
+      throw new Error("Supabase transport is not connected");
+    }
+    return this.channel;
   }
 
   private emit(event: unknown): void {

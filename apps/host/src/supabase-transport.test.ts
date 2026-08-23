@@ -17,6 +17,7 @@ class FakeChannel implements SupabaseTransportChannel {
   private readonly handlers = new Map<string, (payload: unknown) => void>();
   subscribed = false;
   unsubscribed = false;
+  readonly sentMessages: unknown[] = [];
 
   constructor(topic: string, options: Record<string, unknown>) {
     this.topic = topic;
@@ -40,6 +41,11 @@ class FakeChannel implements SupabaseTransportChannel {
 
   async unsubscribe(): Promise<string> {
     this.unsubscribed = true;
+    return "ok";
+  }
+
+  async send(message: unknown): Promise<string> {
+    this.sentMessages.push(message);
     return "ok";
   }
 
@@ -241,6 +247,75 @@ describe("SupabaseTransport", () => {
         p_host_id: "host-1",
         p_lease_owner: "host-process-1",
         p_lease_seconds: 30,
+      },
+    });
+  });
+
+  it("sends encrypted events and records a host heartbeat", async () => {
+    const client = new FakeClient();
+    client.query.response = { data: { id: "host-1" }, error: null };
+    const transport = new SupabaseTransport(client);
+    await transport.connect({
+      hostId: "host-1",
+      deviceId: "device-1",
+      ownerId: "owner-1",
+      leaseOwner: "session-host-1",
+    });
+
+    const eventEnvelope = createEnvelope({
+      hostId: "host-1",
+      deviceId: "device-1",
+      kind: "stream.delta",
+      nonce: "event-nonce",
+      ciphertext: "event-ciphertext",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    await transport.sendEvent(eventEnvelope);
+    await transport.heartbeat();
+
+    expect(client.lastChannel?.sentMessages).toEqual([
+      {
+        type: "broadcast",
+        event: "host.event",
+        payload: eventEnvelope,
+      },
+    ]);
+    expect(client.query.updates[0]).toMatchObject({
+      last_online_at: expect.any(String),
+      updated_at: expect.any(String),
+    });
+  });
+
+  it("completes a command through the guarded host RPC", async () => {
+    const client = new FakeClient();
+    client.rpcResponse = {
+      data: { message_id: envelope.messageId },
+      error: null,
+    };
+    const transport = new SupabaseTransport(client);
+    await transport.connect({
+      hostId: "host-1",
+      deviceId: "device-1",
+      ownerId: "owner-1",
+      leaseOwner: "session-host-1",
+    });
+
+    await transport.completeCommand({
+      messageId: envelope.messageId,
+      status: "completed",
+      result: { nonce: "result-nonce", ciphertext: "result-ciphertext" },
+    });
+
+    expect(client.lastRpc).toEqual({
+      name: "complete_remote_command",
+      args: {
+        p_host_id: "host-1",
+        p_message_id: envelope.messageId,
+        p_lease_owner: "session-host-1",
+        p_status: "completed",
+        p_result_nonce: "result-nonce",
+        p_result_ciphertext: "result-ciphertext",
+        p_error_code: null,
       },
     });
   });
