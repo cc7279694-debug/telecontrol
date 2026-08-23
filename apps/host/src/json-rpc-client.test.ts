@@ -77,5 +77,15 @@ describe("JsonRpcClient", () => {
       result: { decision: "accept" },
     });
   });
-});
 
+  it("waits when a server request handler returns no response", async () => {
+    const channel = new FakeLineChannel();
+    const client = new JsonRpcClient(channel);
+    client.onServerRequest(async () => undefined);
+
+    channel.push({ id: 100, method: "item/commandExecution/requestApproval" });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(channel.writes).toHaveLength(0);
+  });
+});

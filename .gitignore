@@ -7,4 +7,5 @@ coverage/
 !.env.example
 .worktrees/
 *.log
+*.tsbuildinfo
 

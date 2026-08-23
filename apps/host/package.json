@@ -10,7 +10,6 @@
     "@codex-remote/protocol": "0.1.0"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0"
+    "@types/node": "24.13.3"
   }
 }
-

@@ -36,4 +36,3 @@ describe("remote envelope", () => {
     ).toThrow();
   });
 });
-
