@@ -42,6 +42,19 @@ describe("encrypted remote transport migration contract", () => {
     );
     expect(migration).toContain("and h.revoked_at is null");
     expect(migration).toContain("and d.revoked_at is null");
+    expect(migration).toContain(
+      "grant usage on schema private to authenticated",
+    );
+  });
+
+  it("enforces the remote command state machine in the database", () => {
+    expect(migration).toContain(
+      "create or replace function private.enforce_remote_command_transition",
+    );
+    expect(migration).toContain(
+      "create trigger remote_commands_enforce_transition",
+    );
+    expect(migration).toContain("Invalid command status transition");
   });
 
   it("keeps high-privilege functions out of the public API surface", () => {

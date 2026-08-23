@@ -2,6 +2,7 @@
 -- No prompt, code, command, path, plaintext, or model output is stored here.
 
 create schema if not exists private;
+grant usage on schema private to authenticated;
 
 create table public.hosts (
   id uuid primary key default gen_random_uuid(),
@@ -142,6 +143,47 @@ grant insert (owner_id, host_id, code_hash, created_session_id, expires_at)
   on private.pairing_requests to authenticated;
 grant update (consumed_at, consumed_by_device_id)
   on private.pairing_requests to authenticated;
+
+create or replace function private.enforce_remote_command_transition()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if old.status = 'queued' and new.status = 'leased' then
+    if new.lease_owner is null
+       or new.lease_expires_at is null
+       or new.lease_expires_at <= now()
+       or new.started_at is null then
+      raise exception 'Invalid command lease transition';
+    end if;
+    return new;
+  end if;
+
+  if old.status = 'leased'
+     and new.status in ('completed', 'failed', 'expired') then
+    if new.lease_owner is distinct from old.lease_owner
+       or new.lease_expires_at is not null
+       or new.completed_at is null then
+      raise exception 'Invalid command completion transition';
+    end if;
+    return new;
+  end if;
+
+  if old.status = new.status then
+    raise exception 'Command status transition is required';
+  end if;
+  raise exception 'Invalid command status transition';
+end;
+$$;
+
+revoke all on function private.enforce_remote_command_transition()
+  from public, anon, authenticated;
+
+create trigger remote_commands_enforce_transition
+before update on public.remote_commands
+for each row execute function private.enforce_remote_command_transition();
 
 create or replace function private.has_active_client_session(p_owner_id uuid)
 returns boolean

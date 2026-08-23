@@ -88,6 +88,12 @@ export interface HostPresence {
   observedAt: string;
 }
 
+export interface PairingRequest {
+  pairingId: string;
+  code: string;
+  expiresAt: string;
+}
+
 export type HostEventHandler = (event: unknown) => void;
 
 const PRESENCE_WINDOW_MS = 30_000;
@@ -270,6 +276,23 @@ export class SupabaseTransport {
     };
   }
 
+  async createPairingRequest(): Promise<PairingRequest> {
+    const context = this.requireContext();
+    const code = createPairingCode();
+    const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
+    const response = await this.client.rpc<string>("create_pairing_request", {
+      p_host_id: context.hostId,
+      p_code_hash: await hashPairingCode(code),
+      p_expires_at: expiresAt,
+    });
+    if (response.error || !response.data) {
+      throw new Error(
+        response.error?.message ?? "Failed to create pairing request",
+      );
+    }
+    return { pairingId: response.data, code, expiresAt };
+  }
+
   async claimNextCommand(): Promise<ClaimedCommand | null> {
     const context = this.requireContext();
     const response = await this.client.rpc<ClaimedCommand[]>(
@@ -337,4 +360,19 @@ export class SupabaseTransport {
     }
     return payload;
   }
+}
+
+function createPairingCode(): string {
+  const random = crypto.getRandomValues(new Uint32Array(1))[0] ?? 0;
+  return String(random % 1_000_000).padStart(6, "0");
+}
+
+async function hashPairingCode(code: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(code),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }

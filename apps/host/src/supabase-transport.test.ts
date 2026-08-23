@@ -320,6 +320,36 @@ describe("SupabaseTransport", () => {
     });
   });
 
+  it("creates a short-lived pairing request through the guarded host RPC", async () => {
+    const client = new FakeClient();
+    client.rpcResponse = { data: "pairing-1", error: null };
+    const transport = new SupabaseTransport(client);
+    await transport.connect({
+      hostId: "host-1",
+      deviceId: "device-1",
+      ownerId: "owner-1",
+      leaseOwner: "session-host-1",
+    });
+
+    const pairing = await transport.createPairingRequest();
+
+    expect(pairing).toMatchObject({
+      pairingId: "pairing-1",
+      code: expect.stringMatching(/^\d{6}$/),
+      expiresAt: expect.any(String),
+    });
+    expect(Date.parse(pairing.expiresAt)).toBeGreaterThan(Date.now());
+    expect(Date.parse(pairing.expiresAt)).toBeLessThanOrEqual(
+      Date.now() + 5 * 60_000,
+    );
+    expect(client.lastRpc?.name).toBe("create_pairing_request");
+    expect(client.lastRpc?.args).toMatchObject({
+      p_host_id: "host-1",
+      p_expires_at: pairing.expiresAt,
+    });
+    expect(client.lastRpc?.args.p_code_hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
   it("forwards broadcast events and closes the private channel", async () => {
     const client = new FakeClient();
     const transport = new SupabaseTransport(client);
