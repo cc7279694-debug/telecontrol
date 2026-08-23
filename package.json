@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "test": "vitest run",
+    "test:db": "supabase test db --local",
     "test:watch": "vitest",
     "typecheck": "tsc -b",
     "lint": "eslint .",

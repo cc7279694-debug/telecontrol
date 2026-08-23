@@ -5,6 +5,9 @@ const migration = readFileSync(
   new URL("./20260823144357_encrypted_remote_transport.sql", import.meta.url),
   "utf8",
 );
+const packageJson = JSON.parse(
+  readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+) as { scripts?: Record<string, string> };
 
 describe("encrypted remote transport migration contract", () => {
   it("binds database access to the Supabase Auth session", () => {
@@ -39,5 +42,19 @@ describe("encrypted remote transport migration contract", () => {
     );
     expect(migration).toContain("and h.revoked_at is null");
     expect(migration).toContain("and d.revoked_at is null");
+  });
+
+  it("keeps high-privilege functions out of the public API surface", () => {
+    expect(migration).toContain(
+      "create or replace function private.has_active_client_session",
+    );
+    expect(migration).toContain("set search_path = ''");
+    expect(migration).not.toMatch(
+      /create or replace function public\.[\s\S]*?security definer/,
+    );
+  });
+
+  it("provides the executable Supabase database test entry point", () => {
+    expect(packageJson.scripts?.["test:db"]).toBe("supabase test db --local");
   });
 });
