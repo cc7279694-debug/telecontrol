@@ -20,6 +20,7 @@ export {
   deriveAesSessionKey,
   encryptJson,
   generateP256KeyPair,
+  hashPairingCode,
   type DeviceKeyPair,
   type EncryptedPayload,
 } from "./crypto.js";

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { RemoteEnvelope } from "@codex-remote/protocol";
+import { hashPairingCode, type RemoteEnvelope } from "@codex-remote/protocol";
 
 export interface SupabaseTransportError {
   code?: string;
@@ -403,14 +403,4 @@ export class SupabaseTransport {
 function createPairingCode(): string {
   const random = crypto.getRandomValues(new Uint32Array(1))[0] ?? 0;
   return String(random % 1_000_000).padStart(6, "0");
-}
-
-async function hashPairingCode(code: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(code),
-  );
-  return Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
 }
