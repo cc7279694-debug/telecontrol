@@ -37,7 +37,7 @@ Windows 保持当前用户会话和现有代理设置，不修改睡眠、休眠
 
 每个模块单独验证、提交并暂停验收，不自动进入下一个模块，也不推送或合并 `main`。
 
-## 当前执行状态：模块一
+## 当前执行状态：模块三规划完成
 
 已完成：
 
@@ -47,5 +47,9 @@ Windows 保持当前用户会话和现有代理设置，不修改睡眠、休眠
 - Codex App Server 适配器：线程列表/读取/启动/恢复、Turn 启动/追加/停止、审批响应。
 - 工作区 ID 到本地授权路径的映射，以及 `onRequest + workspaceWrite` 策略。
 - Windows 独立 `@openai/codex@0.149.0` CLI 的 `codex app-server` 初始化握手。
+- Supabase 加密命令队列、设备/Host 配对表、RLS 和私有 Realtime 策略。
+- P-256 ECDH、HKDF-SHA-256、AES-256-GCM 加密协议。
+- Host SupabaseTransport、命令租约、幂等、配对码和状态机保护。
+- 本地 Docker/Supabase 迁移、14 项 pgTAP 数据库测试、数据库 Lint 和 35 项代码测试。
 
-暂未开始：Supabase、PWA、通知、安装包和真实手机端到端验收。
+下一步：按照 `2026-08-24-android-pwa.md` 分三个验收点实施 Android PWA。通知、安装包、云端 Preview 和真实手机端到端验收尚未开始。
