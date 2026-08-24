@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 export const remoteEnvelopeSchema = z.object({
@@ -23,7 +22,7 @@ export type RemoteEnvelopeInput = Omit<
 export function createEnvelope(input: RemoteEnvelopeInput): RemoteEnvelope {
   return remoteEnvelopeSchema.parse({
     protocolVersion: 1,
-    messageId: randomUUID(),
+    messageId: globalThis.crypto.randomUUID(),
     sentAt: new Date().toISOString(),
     ...input,
   });

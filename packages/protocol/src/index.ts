@@ -1,9 +1,19 @@
 export {
   remoteCommandSchema,
   remoteEventSchema,
+  hostSnapshotSchema,
+  remoteThreadSnapshotSchema,
+  remoteThreadSummarySchema,
+  remoteTimelineItemSchema,
+  workspaceSummarySchema,
   type RemoteCommand,
   type RemoteCommandKind,
   type RemoteEvent,
+  type HostSnapshot,
+  type RemoteThreadSnapshot,
+  type RemoteThreadSummary,
+  type RemoteTimelineItem,
+  type WorkspaceSummary,
 } from "./commands.js";
 export {
   decryptJson,
@@ -19,3 +29,10 @@ export {
   type RemoteEnvelope,
   type RemoteEnvelopeInput,
 } from "./envelope.js";
+export {
+  openRemotePayload,
+  remoteEnvelopeAdditionalData,
+  sealRemotePayload,
+  type OpenRemotePayloadInput,
+  type SealRemotePayloadInput,
+} from "./sealed-envelope.js";
