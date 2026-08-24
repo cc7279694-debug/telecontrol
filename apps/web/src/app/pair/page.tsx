@@ -22,7 +22,7 @@ export default function PairPage() {
       async ({ hostId, deviceId }) => {
         await remote.connect({ hostId, deviceId });
         try {
-          await remote.requestSnapshot();
+          await remote.requestSnapshotAndWait();
         } finally {
           await remote.disconnect();
         }

@@ -5,6 +5,7 @@ import {
   type RemoteCommand,
   type RemoteEnvelope,
   type RemoteEvent,
+  type HostSnapshot,
 } from "@codex-remote/protocol";
 import type { DeviceIdentityStore } from "../device/device-key-store";
 
@@ -18,6 +19,10 @@ export interface HostPresence {
   hostId: string;
   online: boolean;
   observedAt: string;
+}
+
+export interface EnqueueOptions {
+  idempotencyKey?: string;
 }
 
 interface QueryResponse<T> {
@@ -81,10 +86,14 @@ interface ConnectionContext {
 export interface RemoteClient {
   connect(input: { hostId: string; deviceId: string }): Promise<void>;
   disconnect(): Promise<void>;
-  enqueue(command: RemoteCommand): Promise<CommandReceipt>;
+  enqueue(
+    command: RemoteCommand,
+    options?: EnqueueOptions,
+  ): Promise<CommandReceipt>;
   subscribe(handler: (event: RemoteEvent) => void): () => void;
   getPresence(hostId: string): Promise<HostPresence>;
   requestSnapshot(): Promise<CommandReceipt>;
+  requestSnapshotAndWait(timeoutMs?: number): Promise<HostSnapshot>;
 }
 
 const PRESENCE_WINDOW_MS = 30_000;
@@ -96,6 +105,9 @@ export class BrowserRemoteClient implements RemoteClient {
   private readonly sequences = new Map<string, number>();
   private recovering = false;
   private connected = false;
+  private connectionInput: { hostId: string; deviceId: string } | undefined;
+  private lifecycleListeners:
+    { onOnline: () => void; onVisibilityChange: () => void } | undefined;
 
   constructor(
     private readonly client: RemoteSupabaseClient,
@@ -105,6 +117,7 @@ export class BrowserRemoteClient implements RemoteClient {
 
   async connect(input: { hostId: string; deviceId: string }): Promise<void> {
     await this.disconnect();
+    this.connectionInput = input;
     const claimsResponse = await this.client.auth.getClaims();
     const ownerId = claimsResponse.data?.claims?.sub;
     if (claimsResponse.error || typeof ownerId !== "string") {
@@ -161,14 +174,17 @@ export class BrowserRemoteClient implements RemoteClient {
       channel.subscribe((status) => {
         if (status === "SUBSCRIBED") {
           this.connected = true;
+          this.attachLifecycleListeners();
           resolve();
         } else if (
           status === "CHANNEL_ERROR" ||
           status === "TIMED_OUT" ||
           status === "CLOSED"
         ) {
-          if (this.connected) {
-            void this.recoverSnapshot();
+          const wasConnected = this.connected;
+          this.connected = false;
+          if (wasConnected) {
+            void this.recoverConnection();
           } else {
             reject(new Error(`实时连接失败：${status}`));
           }
@@ -182,13 +198,18 @@ export class BrowserRemoteClient implements RemoteClient {
     this.channel = undefined;
     this.context = undefined;
     this.connected = false;
+    this.connectionInput = undefined;
+    this.removeLifecycleListeners();
     this.sequences.clear();
     if (channel) {
       await channel.unsubscribe();
     }
   }
 
-  async enqueue(command: RemoteCommand): Promise<CommandReceipt> {
+  async enqueue(
+    command: RemoteCommand,
+    options?: EnqueueOptions,
+  ): Promise<CommandReceipt> {
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       throw new Error("当前处于离线状态，请联网后重试");
     }
@@ -200,7 +221,8 @@ export class BrowserRemoteClient implements RemoteClient {
       payload: command,
       ttlMs: this.commandTtlMs,
     });
-    const idempotencyKey = await hashIdempotencyKey(command);
+    const idempotencyKey =
+      options?.idempotencyKey ?? `web:${envelope.messageId}`;
     return this.insertEnvelope(envelope, idempotencyKey);
   }
 
@@ -234,6 +256,65 @@ export class BrowserRemoteClient implements RemoteClient {
 
   async requestSnapshot(): Promise<CommandReceipt> {
     return this.enqueue({ type: "host.snapshot" });
+  }
+
+  requestSnapshotAndWait(timeoutMs = 10_000): Promise<HostSnapshot> {
+    return new Promise<HostSnapshot>((resolve, reject) => {
+      let requestMessageId: string | undefined;
+      let earlyResponse:
+        Extract<RemoteEvent, { type: "host.snapshot.result" }> | undefined;
+      let settled = false;
+      let unsubscribe: () => void = () => undefined;
+
+      const cleanup = () => {
+        unsubscribe();
+        if (timer) {
+          clearTimeout(timer);
+        }
+      };
+      const succeed = (snapshot: HostSnapshot) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        resolve(snapshot);
+      };
+      const fail = (error: unknown) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        reject(error instanceof Error ? error : new Error("快照获取失败"));
+      };
+
+      unsubscribe = this.subscribe((event) => {
+        if (event.type !== "host.snapshot.result") {
+          return;
+        }
+        if (!requestMessageId) {
+          earlyResponse = event;
+          return;
+        }
+        if (event.requestMessageId === requestMessageId) {
+          succeed(event.snapshot);
+        }
+      });
+      const timer = setTimeout(
+        () => fail(new Error("电脑快照响应超时，请重试")),
+        timeoutMs,
+      );
+
+      void this.requestSnapshot()
+        .then((receipt) => {
+          requestMessageId = receipt.messageId;
+          if (earlyResponse?.requestMessageId === requestMessageId) {
+            succeed(earlyResponse.snapshot);
+          }
+        })
+        .catch(fail);
+    });
   }
 
   private async insertEnvelope(
@@ -336,6 +417,49 @@ export class BrowserRemoteClient implements RemoteClient {
     }
   }
 
+  private async recoverConnection(): Promise<void> {
+    if (this.recovering || !this.connectionInput) {
+      return;
+    }
+    this.recovering = true;
+    const input = this.connectionInput;
+    try {
+      if (!this.connected || !this.channel) {
+        await this.connect(input);
+      }
+      await this.requestSnapshot();
+    } catch {
+      // The next online or tab-resume event can retry recovery.
+    } finally {
+      this.recovering = false;
+    }
+  }
+
+  private attachLifecycleListeners(): void {
+    if (typeof window === "undefined" || this.lifecycleListeners) {
+      return;
+    }
+    const onOnline = () => void this.recoverConnection();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void this.recoverConnection();
+      }
+    };
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    this.lifecycleListeners = { onOnline, onVisibilityChange };
+  }
+
+  private removeLifecycleListeners(): void {
+    if (typeof window === "undefined" || !this.lifecycleListeners) {
+      return;
+    }
+    const { onOnline, onVisibilityChange } = this.lifecycleListeners;
+    window.removeEventListener("online", onOnline);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    this.lifecycleListeners = undefined;
+  }
+
   private requireContext(): ConnectionContext {
     if (!this.context || !this.channel) {
       throw new Error("尚未连接电脑");
@@ -352,29 +476,4 @@ function unwrapEnvelope(payload: unknown): RemoteEnvelope | null {
   return candidate && typeof candidate === "object"
     ? (candidate as RemoteEnvelope)
     : null;
-}
-
-async function hashIdempotencyKey(command: RemoteCommand): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(stableStringify(command)),
-  );
-  return `web:${Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("")}`;
-}
-
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(",")}]`;
-  }
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(
-        ([key, nested]) => `${JSON.stringify(key)}:${stableStringify(nested)}`,
-      )
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }

@@ -129,7 +129,7 @@ describe("BrowserRemoteClient", () => {
     });
   });
 
-  it("encrypts commands before inserting them and returns duplicate receipts", async () => {
+  it("uses a fresh idempotency key for each new command", async () => {
     const fixture = await createFixture();
     const remote = new BrowserRemoteClient(
       fixture.client as never,
@@ -137,22 +137,46 @@ describe("BrowserRemoteClient", () => {
     );
     await remote.connect({ hostId: "host-1", deviceId: "device-1" });
 
-    const receipt = await remote.enqueue({ type: "host.snapshot" });
+    const firstReceipt = await remote.enqueue({ type: "host.snapshot" });
+    const secondReceipt = await remote.enqueue({ type: "host.snapshot" });
 
-    expect(receipt).toEqual({
+    expect(firstReceipt).toEqual({
       messageId: "message-1",
       status: "queued",
       duplicate: false,
     });
-    const inserted = fixture.commandQuery.insert.mock.calls[0]?.[0] ?? {};
-    expect(inserted).toMatchObject({
+    expect(secondReceipt).toEqual({
+      messageId: "message-1",
+      status: "queued",
+      duplicate: false,
+    });
+    const firstInserted = fixture.commandQuery.insert.mock.calls[0]?.[0] ?? {};
+    const secondInserted = fixture.commandQuery.insert.mock.calls[1]?.[0] ?? {};
+    expect(firstInserted).toMatchObject({
       owner_id: "owner-1",
       host_id: "host-1",
       device_id: "device-1",
       kind: "host.snapshot",
       status: "queued",
     });
-    expect(inserted.ciphertext).not.toContain("snapshot");
+    expect(firstInserted.ciphertext).not.toContain("snapshot");
+    expect(firstInserted.idempotency_key).not.toBe(
+      secondInserted.idempotency_key,
+    );
+  });
+
+  it("returns the existing receipt only when a caller reuses an idempotency key", async () => {
+    const fixture = await createFixture();
+    const remote = new BrowserRemoteClient(
+      fixture.client as never,
+      fixture.store,
+    );
+    await remote.connect({ hostId: "host-1", deviceId: "device-1" });
+
+    await remote.enqueue(
+      { type: "host.snapshot" },
+      { idempotencyKey: "retryable-command-1" },
+    );
 
     fixture.commandQuery.single.mockResolvedValueOnce({
       data: null,
@@ -162,10 +186,93 @@ describe("BrowserRemoteClient", () => {
       data: { message_id: "message-existing", status: "queued" },
       error: null,
     });
-    await expect(remote.enqueue({ type: "host.snapshot" })).resolves.toEqual({
+    await expect(
+      remote.enqueue(
+        { type: "host.snapshot" },
+        { idempotencyKey: "retryable-command-1" },
+      ),
+    ).resolves.toEqual({
       messageId: "message-existing",
       status: "queued",
       duplicate: true,
+    });
+    expect(fixture.commandQuery.insert.mock.calls[1]?.[0]).toMatchObject({
+      idempotency_key: "retryable-command-1",
+    });
+  });
+
+  it("waits for the matching encrypted snapshot response", async () => {
+    const fixture = await createFixture();
+    const remote = new BrowserRemoteClient(
+      fixture.client as never,
+      fixture.store,
+    );
+    await remote.connect({ hostId: "host-1", deviceId: "device-1" });
+    const key = await deriveAesSessionKey(
+      fixture.host.privateKey,
+      fixture.device.publicKey,
+    );
+    const snapshot = {
+      hostId: "host-1",
+      name: "开发电脑",
+      online: true,
+      observedAt: new Date().toISOString(),
+      workspaces: [{ id: "workspace-1", name: "项目" }],
+    };
+    fixture.commandQuery.single.mockImplementationOnce(async () => {
+      const envelope = await sealRemotePayload({
+        key,
+        hostId: "host-1",
+        deviceId: "device-1",
+        payload: {
+          type: "host.snapshot.result",
+          requestMessageId: "00000000-0000-4000-8000-000000000003",
+          snapshot,
+        },
+      });
+      queueMicrotask(() => fixture.channel.emit({ payload: envelope }));
+      return {
+        data: {
+          message_id: "00000000-0000-4000-8000-000000000003",
+          status: "queued",
+        },
+        error: null,
+      };
+    });
+
+    await expect(remote.requestSnapshotAndWait(1_000)).resolves.toEqual(
+      snapshot,
+    );
+  });
+
+  it("reconnects the private channel and requests a fresh snapshot after a channel closes", async () => {
+    const fixture = await createFixture();
+    const remote = new BrowserRemoteClient(
+      fixture.client as never,
+      fixture.store,
+    );
+    await remote.connect({ hostId: "host-1", deviceId: "device-1" });
+
+    fixture.channel.status("CLOSED");
+    await vi.waitFor(() => {
+      expect(fixture.commandQuery.insert).toHaveBeenCalledTimes(1);
+    });
+
+    expect(fixture.channel.unsubscribe).toHaveBeenCalled();
+    expect(fixture.client.channel).toHaveBeenCalledTimes(2);
+  });
+
+  it("requests a fresh snapshot when the browser returns online", async () => {
+    const fixture = await createFixture();
+    const remote = new BrowserRemoteClient(
+      fixture.client as never,
+      fixture.store,
+    );
+    await remote.connect({ hostId: "host-1", deviceId: "device-1" });
+
+    window.dispatchEvent(new Event("online"));
+    await vi.waitFor(() => {
+      expect(fixture.commandQuery.insert).toHaveBeenCalledTimes(1);
     });
   });
 
