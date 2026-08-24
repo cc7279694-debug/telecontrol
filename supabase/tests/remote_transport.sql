@@ -1,6 +1,6 @@
 begin;
 
-select plan(14);
+select plan(23);
 
 select ok(
   to_regclass('public.hosts') is not null,
@@ -87,6 +87,52 @@ select ok(
 );
 
 select ok(
+  exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'remote_commands'
+      and column_name = 'sent_at'
+      and is_nullable = 'NO'
+      and data_type = 'timestamp with time zone'
+  ),
+  'remote commands preserve the envelope sent_at metadata'
+);
+
+select ok(
+  has_column_privilege(
+    'authenticated', 'public.devices', 'auth_session_id', 'UPDATE'
+  )
+  and has_column_privilege(
+    'authenticated', 'public.devices', 'last_online_at', 'UPDATE'
+  )
+  and has_column_privilege(
+    'authenticated', 'public.devices', 'notifications_enabled', 'UPDATE'
+  )
+  and has_column_privilege(
+    'authenticated', 'public.devices', 'updated_at', 'UPDATE'
+  )
+  and not has_column_privilege(
+    'authenticated', 'public.devices', 'public_key', 'UPDATE'
+  ),
+  'browser sessions can update only safe device session columns'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'devices'
+      and policyname = 'devices_owner_update'
+      and lower(qual) like '%revoked_at is null%'
+      and lower(with_check) like '%auth_session_id%'
+      and lower(with_check) like '%session_id%'
+  ),
+  'device rebinding requires an active owner session and an unrevoked device'
+);
+
+select ok(
   has_column_privilege(
     'authenticated', 'public.remote_commands', 'status', 'UPDATE'
   )
@@ -156,6 +202,14 @@ insert into public.devices (
   'remote-transport-test-device-session', 'Test Device', 'test-device-key'
 );
 
+insert into public.devices (
+  id, owner_id, auth_session_id, name, public_key, revoked_at
+) values (
+  '00000000-0000-0000-0000-000000000015',
+  '00000000-0000-0000-0000-000000000001',
+  'revoked-device-session', 'Revoked Device', 'revoked-device-key', now()
+);
+
 insert into public.host_device_links (owner_id, host_id, device_id)
 values (
   '00000000-0000-0000-0000-000000000001',
@@ -165,14 +219,14 @@ values (
 
 insert into public.remote_commands (
   id, owner_id, host_id, device_id, message_id, kind, nonce,
-  ciphertext, idempotency_key, expires_at
+  ciphertext, idempotency_key, sent_at, expires_at
 ) values (
   '00000000-0000-0000-0000-000000000013',
   '00000000-0000-0000-0000-000000000001',
   '00000000-0000-0000-0000-000000000011',
   '00000000-0000-0000-0000-000000000012',
   '00000000-0000-0000-0000-000000000014', 'turn.start', 'test-nonce',
-  'test-ciphertext', 'remote-transport-test-command', now() + interval '5 minutes'
+  'test-ciphertext', 'remote-transport-test-command', now(), now() + interval '5 minutes'
 );
 
 set local role authenticated;
@@ -204,6 +258,90 @@ select is(
    where id = '00000000-0000-0000-0000-000000000013'),
   'queued',
   'the rejected command remains queued'
+);
+
+select lives_ok(
+  $$
+    update public.devices
+    set auth_session_id = 'remote-transport-test-session',
+        last_online_at = now(),
+        notifications_enabled = true,
+        updated_at = now()
+    where id = '00000000-0000-0000-0000-000000000012'
+  $$,
+  'the active owner can rebind an unrevoked device session'
+);
+
+select throws_ok(
+  $$
+    update public.devices
+    set public_key = 'changed-key'
+    where id = '00000000-0000-0000-0000-000000000012'
+  $$,
+  '42501',
+  'permission denied for table devices',
+  'the browser cannot replace a device public key'
+);
+
+select set_config(
+  'request.jwt.claims',
+  json_build_object(
+    'role', 'authenticated',
+    'sub', '00000000-0000-0000-0000-000000000099',
+    'session_id', 'other-user-session'
+  )::text,
+  true
+);
+
+select lives_ok(
+  $$
+    update public.devices
+    set notifications_enabled = false
+    where id = '00000000-0000-0000-0000-000000000012'
+  $$,
+  'another owner cannot update the device row'
+);
+
+select set_config(
+  'request.jwt.claims',
+  json_build_object(
+    'role', 'authenticated',
+    'sub', '00000000-0000-0000-0000-000000000001',
+    'session_id', 'remote-transport-test-session'
+  )::text,
+  true
+);
+
+select is(
+  (select notifications_enabled from public.devices
+   where id = '00000000-0000-0000-0000-000000000012'),
+  true,
+  'another owner update is filtered by RLS'
+);
+
+select set_config(
+  'request.jwt.claims',
+  json_build_object(
+    'role', 'authenticated',
+    'sub', '00000000-0000-0000-0000-000000000001',
+    'session_id', 'remote-transport-test-session'
+  )::text,
+  true
+);
+
+select lives_ok(
+  $$
+    update public.devices
+    set auth_session_id = 'remote-transport-test-session'
+    where id = '00000000-0000-0000-0000-000000000015'
+  $$,
+  'a revoked device cannot be rebound'
+);
+select is(
+  (select auth_session_id from public.devices
+   where id = '00000000-0000-0000-0000-000000000015'),
+  'revoked-device-session',
+  'a revoked device session remains unchanged'
 );
 
 select * from finish();

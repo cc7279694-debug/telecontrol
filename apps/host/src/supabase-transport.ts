@@ -73,7 +73,9 @@ export interface ClaimedCommand {
   message_id: string;
   host_id: string;
   device_id: string;
+  protocol_version: number;
   kind: string;
+  sent_at: string;
   nonce: string;
   ciphertext: string;
   expires_at: string;
@@ -92,6 +94,12 @@ export interface PairingRequest {
   pairingId: string;
   code: string;
   expiresAt: string;
+}
+
+export interface LinkedDevice {
+  id: string;
+  public_key: string;
+  revoked_at: string | null;
 }
 
 export type HostEventHandler = (event: unknown) => void;
@@ -169,6 +177,7 @@ export class SupabaseTransport {
         message_id: envelope.messageId,
         protocol_version: envelope.protocolVersion,
         kind: envelope.kind,
+        sent_at: envelope.sentAt,
         nonce: envelope.nonce,
         ciphertext: envelope.ciphertext,
         idempotency_key: idempotencyKey,
@@ -274,6 +283,35 @@ export class SupabaseTransport {
         Date.now() - Date.parse(row.last_online_at) <= PRESENCE_WINDOW_MS,
       observedAt,
     };
+  }
+
+  async getLinkedDevice(deviceId: string): Promise<LinkedDevice | null> {
+    const context = this.requireContext();
+    const linkResponse = await this.client
+      .from("host_device_links")
+      .select("device_id,revoked_at")
+      .eq("host_id", context.hostId)
+      .eq("device_id", deviceId)
+      .maybeSingle<{ device_id: string; revoked_at: string | null }>();
+    if (linkResponse.error) {
+      throw new Error(linkResponse.error.message);
+    }
+    if (!linkResponse.data || linkResponse.data.revoked_at !== null) {
+      return null;
+    }
+
+    const deviceResponse = await this.client
+      .from("devices")
+      .select("id,public_key,revoked_at")
+      .eq("id", deviceId)
+      .maybeSingle<LinkedDevice>();
+    if (deviceResponse.error) {
+      throw new Error(deviceResponse.error.message);
+    }
+    if (!deviceResponse.data || deviceResponse.data.revoked_at !== null) {
+      return null;
+    }
+    return deviceResponse.data;
   }
 
   async createPairingRequest(): Promise<PairingRequest> {

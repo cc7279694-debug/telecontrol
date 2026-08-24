@@ -5,6 +5,10 @@ const migration = readFileSync(
   new URL("./20260823144357_encrypted_remote_transport.sql", import.meta.url),
   "utf8",
 );
+const sessionMigration = readFileSync(
+  new URL("./20260824020757_add_web_device_session.sql", import.meta.url),
+  "utf8",
+);
 const packageJson = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
 ) as { scripts?: Record<string, string> };
@@ -69,5 +73,18 @@ describe("encrypted remote transport migration contract", () => {
 
   it("provides the executable Supabase database test entry point", () => {
     expect(packageJson.scripts?.["test:db"]).toBe("supabase test db --local");
+  });
+
+  it("preserves authenticated envelope metadata and narrows device updates", () => {
+    expect(sessionMigration).toContain(
+      "alter table public.remote_commands add column sent_at timestamptz",
+    );
+    expect(sessionMigration).toContain(
+      "grant update (\n  auth_session_id, last_online_at, notifications_enabled, updated_at",
+    );
+    expect(sessionMigration).toContain("revoked_at is null");
+    expect(sessionMigration).toContain(
+      "auth_session_id = (select auth.jwt() ->> 'session_id')",
+    );
   });
 });

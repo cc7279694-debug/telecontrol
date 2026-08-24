@@ -215,13 +215,15 @@ describe("SupabaseTransport", () => {
       data: [
         {
           id: "row-1",
-          message_id: envelope.messageId,
-          host_id: "host-1",
-          device_id: "device-1",
-          kind: "turn.start",
+      message_id: envelope.messageId,
+      protocol_version: envelope.protocolVersion,
+      host_id: "host-1",
+      device_id: "device-1",
+      kind: "turn.start",
           nonce: "nonce",
-          ciphertext: "ciphertext",
-          expires_at: envelope.expiresAt,
+      ciphertext: "ciphertext",
+      sent_at: envelope.sentAt,
+      expires_at: envelope.expiresAt,
           status: "leased",
           lease_owner: "host-process-1",
           lease_expires_at: new Date(Date.now() + 30_000).toISOString(),
@@ -284,6 +286,44 @@ describe("SupabaseTransport", () => {
       last_online_at: expect.any(String),
       updated_at: expect.any(String),
     });
+  });
+
+  it("returns only an active device linked to the connected host", async () => {
+    const client = new FakeClient();
+    client.query.responses.push(
+      { data: { device_id: "device-1", revoked_at: null }, error: null },
+      {
+        data: { id: "device-1", public_key: "device-public-key", revoked_at: null },
+        error: null,
+      },
+    );
+    const transport = new SupabaseTransport(client);
+    await transport.connect({
+      hostId: "host-1",
+      deviceId: "device-1",
+      ownerId: "owner-1",
+      leaseOwner: "session-host-1",
+    });
+
+    await expect(transport.getLinkedDevice("device-1")).resolves.toEqual({
+      id: "device-1",
+      public_key: "device-public-key",
+      revoked_at: null,
+    });
+  });
+
+  it("rejects an unpaired or revoked device lookup", async () => {
+    const client = new FakeClient();
+    client.query.response = { data: null, error: null };
+    const transport = new SupabaseTransport(client);
+    await transport.connect({
+      hostId: "host-1",
+      deviceId: "device-1",
+      ownerId: "owner-1",
+      leaseOwner: "session-host-1",
+    });
+
+    await expect(transport.getLinkedDevice("device-2")).resolves.toBeNull();
   });
 
   it("completes a command through the guarded host RPC", async () => {
