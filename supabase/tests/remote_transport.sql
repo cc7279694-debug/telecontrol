@@ -2,8 +2,14 @@ begin;
 
 select plan(14);
 
-select has_table('public', 'hosts');
-select has_table('private', 'pairing_requests');
+select ok(
+  to_regclass('public.hosts') is not null,
+  'hosts'
+);
+select ok(
+  to_regclass('private.pairing_requests') is not null,
+  'pairing_requests'
+);
 
 select ok(
   has_schema_privilege('authenticated', 'private', 'USAGE'),
@@ -35,7 +41,7 @@ select ok(
     where n.nspname = 'private'
       and p.proname = 'has_active_client_session'
       and p.prosecdef
-      and p.proconfig @> array['search_path=']
+      and p.proconfig @> array['search_path=""']
   ),
   'the private session helper pins an empty search_path'
 );
@@ -81,7 +87,21 @@ select ok(
 );
 
 select ok(
-  has_table_privilege('authenticated', 'public.remote_commands', 'UPDATE'),
+  has_column_privilege(
+    'authenticated', 'public.remote_commands', 'status', 'UPDATE'
+  )
+  and has_column_privilege(
+    'authenticated', 'public.remote_commands', 'lease_owner', 'UPDATE'
+  )
+  and has_column_privilege(
+    'authenticated', 'public.remote_commands', 'lease_expires_at', 'UPDATE'
+  )
+  and has_column_privilege(
+    'authenticated', 'public.remote_commands', 'started_at', 'UPDATE'
+  )
+  and has_column_privilege(
+    'authenticated', 'public.remote_commands', 'completed_at', 'UPDATE'
+  ),
   'the host lease transition has the required column grant'
 );
 
@@ -105,7 +125,7 @@ select ok(
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'private'
       and p.proname = 'enforce_remote_command_transition'
-      and p.proconfig @> array['search_path=']
+      and p.proconfig @> array['search_path=""']
   ),
   'the command transition trigger pins an empty search_path'
 );
