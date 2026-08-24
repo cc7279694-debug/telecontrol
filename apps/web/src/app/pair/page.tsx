@@ -7,13 +7,28 @@ import { DeviceIdentityStore } from "../../features/device/device-key-store";
 import { DeviceRegistry } from "../../features/device/device-registry";
 import { PairingForm } from "../../features/pairing/pairing-form";
 import { PairingService } from "../../features/pairing/pairing-service";
+import { BrowserRemoteClient } from "../../features/remote/remote-client";
 
 export default function PairPage() {
   const router = useRouter();
   const pairingContext = useMemo(() => {
     const client = createBrowserSupabaseClient();
-    const registry = new DeviceRegistry(client, new DeviceIdentityStore());
-    return { registry, service: new PairingService(client, registry) };
+    const deviceStore = new DeviceIdentityStore();
+    const registry = new DeviceRegistry(client, deviceStore);
+    const remote = new BrowserRemoteClient(client as never, deviceStore);
+    const service = new PairingService(
+      client,
+      registry,
+      async ({ hostId, deviceId }) => {
+        await remote.connect({ hostId, deviceId });
+        try {
+          await remote.requestSnapshot();
+        } finally {
+          await remote.disconnect();
+        }
+      },
+    );
+    return { registry, service };
   }, []);
 
   return (
