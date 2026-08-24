@@ -4,11 +4,7 @@ import {
   type RemoteCommand,
   type RemoteEvent,
 } from "./commands.js";
-import {
-  decryptJson,
-  encryptJson,
-  type EncryptedPayload,
-} from "./crypto.js";
+import { decryptJson, encryptJson, type EncryptedPayload } from "./crypto.js";
 import {
   createEnvelope,
   remoteEnvelopeSchema,

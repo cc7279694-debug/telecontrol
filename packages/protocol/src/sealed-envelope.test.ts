@@ -15,7 +15,10 @@ async function createSessionKey(): Promise<CryptoKey> {
 describe("sealed remote payloads", () => {
   it("round-trips a command through a browser-safe protocol import", async () => {
     const key = await createSessionKey();
-    const command = { type: "thread.list" as const, workspaceId: "workspace-1" };
+    const command = {
+      type: "thread.list" as const,
+      workspaceId: "workspace-1",
+    };
 
     const envelope = await sealRemotePayload({
       key,
@@ -25,7 +28,9 @@ describe("sealed remote payloads", () => {
       ttlMs: 30_000,
     });
 
-    await expect(openRemotePayload({ key, envelope })).resolves.toEqual(command);
+    await expect(openRemotePayload({ key, envelope })).resolves.toEqual(
+      command,
+    );
   });
 
   it("rejects a changed host id before accepting the plaintext", async () => {
