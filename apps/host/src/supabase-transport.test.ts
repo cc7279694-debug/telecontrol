@@ -215,15 +215,15 @@ describe("SupabaseTransport", () => {
       data: [
         {
           id: "row-1",
-      message_id: envelope.messageId,
-      protocol_version: envelope.protocolVersion,
-      host_id: "host-1",
-      device_id: "device-1",
-      kind: "turn.start",
+          message_id: envelope.messageId,
+          protocol_version: envelope.protocolVersion,
+          host_id: "host-1",
+          device_id: "device-1",
+          kind: "turn.start",
           nonce: "nonce",
-      ciphertext: "ciphertext",
-      sent_at: envelope.sentAt,
-      expires_at: envelope.expiresAt,
+          ciphertext: "ciphertext",
+          sent_at: envelope.sentAt,
+          expires_at: envelope.expiresAt,
           status: "leased",
           lease_owner: "host-process-1",
           lease_expires_at: new Date(Date.now() + 30_000).toISOString(),
@@ -293,7 +293,11 @@ describe("SupabaseTransport", () => {
     client.query.responses.push(
       { data: { device_id: "device-1", revoked_at: null }, error: null },
       {
-        data: { id: "device-1", public_key: "device-public-key", revoked_at: null },
+        data: {
+          id: "device-1",
+          public_key: "device-public-key",
+          revoked_at: null,
+        },
         error: null,
       },
     );

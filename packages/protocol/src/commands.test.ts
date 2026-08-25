@@ -122,6 +122,8 @@ describe("remote commands", () => {
       },
     ];
 
-    expect(events.map((event) => remoteEventSchema.parse(event))).toEqual(events);
+    expect(events.map((event) => remoteEventSchema.parse(event))).toEqual(
+      events,
+    );
   });
 });
