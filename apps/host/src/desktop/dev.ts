@@ -1,15 +1,20 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, watch } from "node:fs";
+import { existsSync, watch, type FSWatcher } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  hostRoot,
+  initialBuildCommand,
+  persistentWatchCommands,
+  relaunchWatchPlans,
+} from "./dev-plan.js";
 
-const desktopDir = path.dirname(fileURLToPath(import.meta.url));
-const hostRoot = path.resolve(desktopDir, "..", "..");
 const distRoot = path.join(hostRoot, "dist");
 const desktopEntry = path.join(distRoot, "desktop", "main.js");
 const rendererEntry = path.join(distRoot, "renderer", "index.html");
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
+const activeWatchers = new Set<FSWatcher>();
 const longRunningProcesses = new Set<ChildProcess>();
 let electronProcess: ChildProcess | undefined;
 let restartTimer: NodeJS.Timeout | undefined;
@@ -84,6 +89,38 @@ function restartElectron() {
   }, 150);
 }
 
+function trackWatcher(watcher: FSWatcher) {
+  activeWatchers.add(watcher);
+  watcher.once("close", () => {
+    activeWatchers.delete(watcher);
+  });
+}
+
+function startRelaunchWatchers() {
+  for (const plan of relaunchWatchPlans) {
+    const watcher = watch(
+      path.resolve(hostRoot, plan.rootRelativePath),
+      { recursive: true },
+      (_eventType, fileName) => {
+        if (!fileName) {
+          return;
+        }
+
+        const changedPath = fileName.toString().replaceAll("\\", "/");
+
+        if (
+          plan.triggers.includes(".") ||
+          plan.triggers.some((trigger) => changedPath.startsWith(trigger))
+        ) {
+          restartElectron();
+        }
+      },
+    );
+
+    trackWatcher(watcher);
+  }
+}
+
 function shutdown() {
   if (isShuttingDown) {
     return;
@@ -97,6 +134,10 @@ function shutdown() {
 
   for (const child of longRunningProcesses) {
     child.kill();
+  }
+
+  for (const watcher of activeWatchers) {
+    watcher.close();
   }
 
   if (electronProcess) {
@@ -115,50 +156,24 @@ process.on("SIGTERM", () => {
 });
 
 async function main() {
-  await waitForExit(spawnCommand(["run", "build"], false));
+  await waitForExit(spawnCommand([...initialBuildCommand], false));
 
-  spawnCommand(
-    ["exec", "--", "tsc", "-p", "tsconfig.json", "-w", "--preserveWatchOutput"],
-    true,
-  );
-  spawnCommand(
-    [
-      "exec",
-      "--",
-      "tsc",
-      "-p",
-      "tsconfig.desktop.json",
-      "-w",
-      "--preserveWatchOutput",
-    ],
-    true,
-  );
-  spawnCommand(
-    ["exec", "--", "vite", "build", "--watch", "--emptyOutDir", "false"],
-    true,
-  );
+  for (const command of persistentWatchCommands) {
+    spawnCommand(command.args, true);
+  }
 
   launchElectron();
-
-  watch(distRoot, { recursive: true }, (_eventType, fileName) => {
-    if (!fileName) {
-      return;
-    }
-
-    const changedPath = fileName.toString().replaceAll("\\", "/");
-
-    if (
-      changedPath.startsWith("desktop/") ||
-      changedPath === "renderer/index.html" ||
-      changedPath.startsWith("renderer/assets/")
-    ) {
-      restartElectron();
-    }
-  });
+  startRelaunchWatchers();
 }
 
-void main().catch((error: unknown) => {
-  console.error(error);
-  shutdown();
-  process.exit(1);
-});
+const isEntrypoint =
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isEntrypoint) {
+  void main().catch((error: unknown) => {
+    console.error(error);
+    shutdown();
+    process.exit(1);
+  });
+}

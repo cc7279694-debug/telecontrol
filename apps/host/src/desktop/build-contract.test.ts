@@ -27,17 +27,81 @@ describe("Windows Host build contract", () => {
     });
   });
 
-  it("uses a watch-driven dev command instead of a one-shot build shell", () => {
+  it("uses a structured dev watch plan that includes protocol, host core, desktop, and renderer rebuilds", async () => {
     const packageJson = readJsonFile<{
       scripts?: Record<string, string>;
     }>(path.join(hostRoot, "package.json"));
+    const devPlanModule = await import(
+      pathToFileURL(path.join(hostRoot, "src", "desktop", "dev-plan.ts")).href
+    );
 
     const devScript = packageJson.scripts?.dev;
+    const persistentWatchCommands = devPlanModule.persistentWatchCommands as Array<{
+      name: string;
+      args: string[];
+    }>;
+    const relaunchWatchPlans = devPlanModule.relaunchWatchPlans as Array<{
+      rootRelativePath: string;
+      triggers: string[];
+    }>;
 
-    expect(devScript).toBeDefined();
-    expect(devScript).not.toBe("npm run build && electron .");
-    expect(devScript).toContain("watch");
-    expect(devScript).toContain("electron");
+    expect(devScript).toBe("tsx src/desktop/dev.ts --watch-electron");
+    expect(persistentWatchCommands).toEqual(
+      expect.arrayContaining([
+        {
+          name: "protocol",
+          args: [
+            "exec",
+            "--",
+            "tsc",
+            "-p",
+            "../../packages/protocol/tsconfig.json",
+            "-w",
+            "--preserveWatchOutput",
+          ],
+        },
+        {
+          name: "host-core",
+          args: [
+            "exec",
+            "--",
+            "tsc",
+            "-p",
+            "tsconfig.json",
+            "-w",
+            "--preserveWatchOutput",
+          ],
+        },
+        {
+          name: "desktop",
+          args: [
+            "exec",
+            "--",
+            "tsc",
+            "-p",
+            "tsconfig.desktop.json",
+            "-w",
+            "--preserveWatchOutput",
+          ],
+        },
+        {
+          name: "renderer",
+          args: ["exec", "--", "vite", "build", "--watch", "--emptyOutDir", "false"],
+        },
+      ]),
+    );
+    expect(relaunchWatchPlans).toEqual(
+      expect.arrayContaining([
+        {
+          rootRelativePath: "dist",
+          triggers: ["desktop/", "renderer/index.html", "renderer/assets/"],
+        },
+        {
+          rootRelativePath: "../../packages/protocol/dist",
+          triggers: ["."],
+        },
+      ]),
+    );
   });
 
   it("does not depend on electron-updater", () => {
