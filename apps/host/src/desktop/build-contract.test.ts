@@ -82,13 +82,21 @@ describe("Windows Host build contract", () => {
     ]);
   });
 
-  it("keeps the renderer build config local and deterministic", () => {
-    const viteConfigSource = readFileSync(path.join(hostRoot, "vite.config.ts"), "utf8");
+  it("keeps the renderer build config local and deterministic", async () => {
+    const viteConfigPath = path.join(hostRoot, "vite.config.ts");
 
-    expect(viteConfigSource).toContain('base: "./"');
-    expect(viteConfigSource).toContain('outDir: "dist/renderer"');
-    expect(viteConfigSource).toContain("emptyOutDir: false");
-    expect(viteConfigSource).toContain('input: path.join(hostRoot, "index.html")');
+    expect(existsSync(viteConfigPath)).toBe(true);
+
+    const viteConfigModule = await import(pathToFileURL(viteConfigPath).href);
+    const viteConfig =
+      typeof viteConfigModule.default === "function"
+        ? await viteConfigModule.default({ command: "build", mode: "test" })
+        : viteConfigModule.default;
+
+    expect(viteConfig.base).toBe("./");
+    expect(viteConfig.build?.outDir).toBe("dist/renderer");
+    expect(viteConfig.build?.emptyOutDir).toBe(false);
+    expect(viteConfig.build?.rollupOptions?.input).toBe(path.join(hostRoot, "index.html"));
   });
 
   it("does not depend on electron-updater", () => {
