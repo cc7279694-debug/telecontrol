@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../../components/app-shell";
+import { PushNotificationSettings } from "../../components/push-notification-settings";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader } from "../../components/ui/card";
@@ -81,7 +82,7 @@ function ConnectedDashboard({
   offline,
   offlineMessage,
 }: {
-  host: { hostId: string; hostName: string };
+  host: { hostId: string; hostName: string; deviceId: string };
   offline: boolean;
   offlineMessage: string | null;
 }) {
@@ -178,6 +179,7 @@ function ConnectedDashboard({
                 Windows Host 还没有授权项目。
               </p>
             )}
+            <PushNotificationSettings deviceId={host.deviceId} />
           </CardContent>
         </Card>
         <section aria-labelledby="thread-list-title">

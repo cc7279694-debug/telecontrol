@@ -39,6 +39,38 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("push", (event) => {
+  const notification = readPushNotification(event.data);
+  if (!notification) return;
+  event.waitUntil(
+    self.registration.showNotification(notification.title, {
+      body: notification.body,
+      tag: `${notification.kind}:${notification.data.eventId}`,
+      data: notification.data,
+      renotify: true,
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const data = event.notification.data;
+  if (!isNotificationData(data)) return;
+  const target = `/hosts?hostId=${encodeURIComponent(data.hostId)}&eventId=${encodeURIComponent(data.eventId)}`;
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clients) => {
+        const existing = clients.find((client) => "focus" in client);
+        if (existing) {
+          void existing.navigate(target);
+          return existing.focus();
+        }
+        return self.clients.openWindow(target);
+      }),
+  );
+});
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
@@ -74,3 +106,35 @@ self.addEventListener("fetch", (event) => {
     }),
   );
 });
+
+function readPushNotification(data) {
+  if (!data) return null;
+  try {
+    const value = data.json();
+    if (
+      !value ||
+      !["approval", "completed", "failed"].includes(value.kind) ||
+      typeof value.title !== "string" ||
+      typeof value.body !== "string" ||
+      value.title.length > 80 ||
+      value.body.length > 160 ||
+      !isNotificationData(value.data)
+    ) {
+      return null;
+    }
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function isNotificationData(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    typeof value.hostId === "string" &&
+    value.hostId.length <= 100 &&
+    typeof value.eventId === "string" &&
+    value.eventId.length <= 200
+  );
+}

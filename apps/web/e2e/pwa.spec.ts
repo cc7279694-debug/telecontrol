@@ -31,6 +31,22 @@ test("PWA 清单、图标和离线页可访问", async ({ page, request }) => {
   await expect(page.locator("html")).not.toHaveClass(
     new RegExp(initialTheme ?? "^$"),
   );
+
+  const pushKey = await request.get("/api/push/vapid-public-key");
+  expect(pushKey.status()).toBe(503);
+  const unauthenticatedSubscribe = await request.post(
+    "/api/push/subscription",
+    {
+      data: {
+        deviceId: "00000000-0000-4000-8000-000000000001",
+        subscription: {
+          endpoint: "https://push.example.test/subscription",
+          keys: { p256dh: "public-key", auth: "auth-secret" },
+        },
+      },
+    },
+  );
+  expect(unauthenticatedSubscribe.status()).toBe(401);
 });
 
 test("Service Worker 只接管静态壳，不缓存受保护页面", async ({ page }) => {
