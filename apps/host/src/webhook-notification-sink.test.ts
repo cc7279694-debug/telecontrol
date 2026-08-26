@@ -68,4 +68,26 @@ describe("webhook notification sink", () => {
     ).rejects.toThrow("通知服务返回 503");
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+
+  it("aborts a stalled notification request after the configured timeout", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(
+      (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(new Error("aborted"));
+          });
+        }),
+    );
+    const sink = createWebhookNotificationSink({
+      endpoint: "https://remote.example.test/api/push/notify",
+      accessToken: "token",
+      fetcher,
+      timeoutMs: 5,
+    });
+
+    await expect(
+      sink.notify({ hostId: "host-1", kind: "completed", eventId: "event-1" }),
+    ).rejects.toThrow("通知服务请求超时");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
 });
