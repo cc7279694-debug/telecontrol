@@ -134,7 +134,9 @@ function ConnectedDashboard({
           candidate.type === "thread.snapshot" &&
           candidate.snapshot.id === thread.id,
       );
-      router.push(`/hosts/${host.hostId}/threads/${thread.id}`);
+      router.push(
+        `/hosts/${host.hostId}/threads/${thread.id}?workspaceId=${encodeURIComponent(thread.workspaceId)}`,
+      );
     } catch (caught) {
       setActionError(caught instanceof Error ? caught.message : "任务读取失败");
     } finally {
@@ -221,7 +223,9 @@ function ConnectedDashboard({
         client={client}
         onClose={() => setNewThreadOpen(false)}
         onCreated={(threadId) =>
-          router.push(`/hosts/${host.hostId}/threads/${threadId}`)
+          router.push(
+            `/hosts/${host.hostId}/threads/${threadId}?workspaceId=${encodeURIComponent(selectedWorkspace?.id ?? "")}`,
+          )
         }
       />
     </AppShell>
