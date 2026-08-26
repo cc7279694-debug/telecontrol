@@ -64,7 +64,9 @@ self.addEventListener("fetch", (event) => {
     caches.match(request).then((cached) => {
       const fresh = fetch(request).then((response) => {
         if (response.ok) {
-          void caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()));
+          void caches
+            .open(CACHE_NAME)
+            .then((cache) => cache.put(request, response.clone()));
         }
         return response;
       });

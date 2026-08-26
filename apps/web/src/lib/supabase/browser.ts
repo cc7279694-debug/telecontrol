@@ -8,7 +8,12 @@ let browserClient: SupabaseClient | undefined;
 
 export function createBrowserSupabaseClient(): SupabaseClient {
   if (!browserClient) {
-    const { supabaseUrl, publishableKey } = getPublicEnv();
+    // Next.js only inlines direct NEXT_PUBLIC_* property reads in client bundles.
+    const { supabaseUrl, publishableKey } = getPublicEnv({
+      NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:
+        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    });
     browserClient = createBrowserClient(supabaseUrl, publishableKey);
   }
   return browserClient;
