@@ -9,7 +9,12 @@ import {
 import {
   RemoteCommandRunner,
   type RemoteCommandAdapter,
+  type HostNotificationSink,
 } from "./remote-command-runner.js";
+import type {
+  JsonRpcNotification,
+  JsonRpcServerRequest,
+} from "./json-rpc-client.js";
 import { RemoteThreadStore } from "./remote-thread-store.js";
 import type { ClaimedCommand, LinkedDevice } from "./supabase-transport.js";
 
@@ -45,9 +50,13 @@ class FakeTransport {
 }
 
 function createAdapter(): RemoteCommandAdapter & {
-  approvalHandler?: (request: never) => Promise<void>;
+  approvalHandler?: (request: JsonRpcServerRequest) => Promise<void>;
+  notificationHandler?: (notification: JsonRpcNotification) => void;
 } {
-  return {
+  const adapter: RemoteCommandAdapter & {
+    approvalHandler?: (request: JsonRpcServerRequest) => Promise<void>;
+    notificationHandler?: (notification: JsonRpcNotification) => void;
+  } = {
     listThreads: vi.fn().mockResolvedValue([]),
     readThread: vi
       .fn()
@@ -62,11 +71,20 @@ function createAdapter(): RemoteCommandAdapter & {
     steerTurn: vi.fn().mockResolvedValue(undefined),
     interruptTurn: vi.fn().mockResolvedValue(undefined),
     resolveApproval: vi.fn().mockResolvedValue(undefined),
-    onApprovalRequest: vi.fn((handler) => {
-      return () => void handler;
-    }),
-    onNotification: vi.fn(() => () => undefined),
+    onApprovalRequest: vi.fn(
+      (handler: (request: JsonRpcServerRequest) => Promise<void>) => {
+        adapter.approvalHandler = handler;
+        return () => undefined;
+      },
+    ),
+    onNotification: vi.fn(
+      (handler: (notification: JsonRpcNotification) => void) => {
+        adapter.notificationHandler = handler;
+        return () => undefined;
+      },
+    ),
   };
+  return adapter;
 }
 
 async function prepareCommand(
@@ -111,6 +129,7 @@ async function createRunner(
     transport: FakeTransport,
   ) => void,
   expiresAt?: string,
+  notificationSink?: HostNotificationSink,
 ) {
   const host = await generateP256KeyPair();
   const device = await generateP256KeyPair();
@@ -127,6 +146,7 @@ async function createRunner(
       { id: "workspace-1", name: "项目", path: "C:\\authorized-project" },
     ],
     hostName: "开发电脑",
+    ...(notificationSink ? { notificationSink } : {}),
   });
   return { runner, transport, adapter, store };
 }
@@ -310,5 +330,94 @@ describe("RemoteCommandRunner", () => {
     expect(transport.completed).toMatchObject([
       { status: "failed", errorCode: "adapter_failed" },
     ]);
+  });
+
+  it("forwards approval metadata to the notification sink", async () => {
+    const notificationSink = { notify: vi.fn().mockResolvedValue(undefined) };
+    const { runner, adapter, transport } = await createRunner(
+      { type: "host.snapshot" },
+      undefined,
+      undefined,
+      notificationSink,
+    );
+    await runner.runOnce();
+
+    await adapter.approvalHandler?.({
+      id: "approval-1",
+      method: "item/commandExecution/requestApproval",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        detail: "C:\\Users\\secret\\run.ps1",
+      },
+    });
+
+    expect(notificationSink.notify).toHaveBeenCalledWith({
+      hostId: "host-1",
+      kind: "approval",
+      eventId: transport.claimed?.message_id,
+    });
+  });
+
+  it("notifies only for completed or failed turn events", async () => {
+    const notificationSink = { notify: vi.fn().mockResolvedValue(undefined) };
+    const { runner, adapter, transport } = await createRunner(
+      { type: "host.snapshot" },
+      undefined,
+      undefined,
+      notificationSink,
+    );
+    await runner.runOnce();
+
+    adapter.notificationHandler?.({
+      method: "turn/status",
+      params: { threadId: "thread-1", turnId: "turn-1", status: "inProgress" },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(notificationSink.notify).not.toHaveBeenCalled();
+
+    adapter.notificationHandler?.({
+      method: "turn/status",
+      params: { threadId: "thread-1", turnId: "turn-1", status: "completed" },
+    });
+    await vi.waitFor(() => {
+      expect(notificationSink.notify).toHaveBeenCalledWith({
+        hostId: "host-1",
+        kind: "completed",
+        eventId: transport.claimed?.message_id,
+      });
+    });
+
+    adapter.notificationHandler?.({
+      method: "turn/status",
+      params: { threadId: "thread-1", turnId: "turn-1", status: "failed" },
+    });
+    await vi.waitFor(() => {
+      expect(notificationSink.notify).toHaveBeenCalledWith({
+        hostId: "host-1",
+        kind: "failed",
+        eventId: transport.claimed?.message_id,
+      });
+    });
+  });
+
+  it("keeps remote event forwarding working when notification fails", async () => {
+    const notificationSink = {
+      notify: vi.fn().mockRejectedValue(new Error("notification offline")),
+    };
+    const { runner, adapter, transport } = await createRunner(
+      { type: "host.snapshot" },
+      undefined,
+      undefined,
+      notificationSink,
+    );
+    await runner.runOnce();
+
+    adapter.notificationHandler?.({
+      method: "turn/status",
+      params: { threadId: "thread-1", turnId: "turn-1", status: "completed" },
+    });
+    await vi.waitFor(() => expect(notificationSink.notify).toHaveBeenCalled());
+    expect(transport.sentEvents).toHaveLength(2);
   });
 });

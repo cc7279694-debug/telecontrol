@@ -56,6 +56,18 @@ export interface RemoteRunnerTransport {
   }): Promise<void>;
 }
 
+export type HostNotificationKind = "approval" | "completed" | "failed";
+
+export interface HostNotificationMetadata {
+  hostId: string;
+  kind: HostNotificationKind;
+  eventId: string;
+}
+
+export interface HostNotificationSink {
+  notify(metadata: HostNotificationMetadata): Promise<void>;
+}
+
 export interface RemoteCommandRunnerOptions {
   hostId: string;
   hostName: string;
@@ -63,6 +75,7 @@ export interface RemoteCommandRunnerOptions {
   authorizedWorkspaces: AuthorizedWorkspace[];
   threadStore: RemoteThreadStore;
   pollIntervalMs?: number;
+  notificationSink?: HostNotificationSink;
 }
 
 interface ActiveSession {
@@ -429,6 +442,11 @@ export class RemoteCommandRunner {
       requestMessageId: session.requestMessageId,
       ...display,
     });
+    await this.notifySafely({
+      hostId: this.options.hostId,
+      kind: "approval",
+      eventId: session.requestMessageId,
+    });
   }
 
   private async forwardNotification(
@@ -450,6 +468,24 @@ export class RemoteCommandRunner {
         requestMessageId: session.requestMessageId,
         ...status,
       });
+      if (status.status === "completed" || status.status === "failed") {
+        await this.notifySafely({
+          hostId: this.options.hostId,
+          kind: status.status,
+          eventId: session.requestMessageId,
+        });
+      }
+    }
+  }
+
+  private async notifySafely(
+    metadata: HostNotificationMetadata,
+  ): Promise<void> {
+    if (!this.options.notificationSink) return;
+    try {
+      await this.options.notificationSink.notify(metadata);
+    } catch {
+      // Notification delivery is best effort and must not break Codex control.
     }
   }
 

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { RemoteEvent } from "@codex-remote/protocol";
-import { buildPushNotification } from "./notification-policy";
+import {
+  buildPushNotification,
+  buildPushNotificationFromMeta,
+} from "./notification-policy";
 import { parsePushSubscription } from "./push-subscription";
 
 describe("notification policy", () => {
@@ -58,6 +61,30 @@ describe("notification policy", () => {
         status: "failed",
       }),
     ).toMatchObject({ kind: "failed" });
+  });
+
+  it("builds the same safe payload from Host event metadata", () => {
+    expect(
+      buildPushNotificationFromMeta("host-1", "approval", "message-1"),
+    ).toEqual({
+      kind: "approval",
+      title: "Codex Remote 需要审批",
+      body: "有一个任务正在等待你的决定",
+      data: { hostId: "host-1", eventId: "message-1" },
+    });
+    expect(
+      buildPushNotificationFromMeta("host-1", "completed", "message-2"),
+    ).toMatchObject({ kind: "completed" });
+    expect(
+      buildPushNotificationFromMeta("host-1", "failed", "message-3"),
+    ).toMatchObject({ kind: "failed" });
+    expect(
+      buildPushNotificationFromMeta(
+        "host-1",
+        "completed",
+        "C:\\Users\\secret\\prompt.txt",
+      ),
+    ).toBeNull();
   });
 
   it("accepts only bounded Web Push subscription fields", () => {

@@ -12,6 +12,23 @@ export interface PushNotification {
   };
 }
 
+export type PushNotificationMetaKind = PushNotificationKind;
+
+export function buildPushNotificationFromMeta(
+  hostId: string,
+  kind: PushNotificationMetaKind,
+  eventId: string,
+): PushNotification | null {
+  if (!isSafeOpaqueId(hostId) || !isSafeOpaqueId(eventId)) return null;
+  const copy = {
+    approval: ["Codex Remote 需要审批", "有一个任务正在等待你的决定"],
+    completed: ["Codex Remote 任务完成", "远程任务已完成"],
+    failed: ["Codex Remote 任务失败", "远程任务执行失败"],
+  } as const;
+  const [title, body] = copy[kind];
+  return createNotification(kind, title, body, hostId, eventId);
+}
+
 export function buildPushNotification(
   hostId: string,
   event: RemoteEvent,
@@ -59,4 +76,8 @@ function createNotification(
   eventId: string,
 ): PushNotification {
   return { kind, title, body, data: { hostId, eventId } };
+}
+
+function isSafeOpaqueId(value: string): boolean {
+  return /^[A-Za-z0-9._:-]{1,200}$/.test(value);
 }

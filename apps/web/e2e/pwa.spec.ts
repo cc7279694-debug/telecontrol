@@ -47,6 +47,10 @@ test("PWA 清单、图标和离线页可访问", async ({ page, request }) => {
     },
   );
   expect(unauthenticatedSubscribe.status()).toBe(401);
+  const unauthenticatedNotify = await request.post("/api/push/notify", {
+    data: { hostId: "host-1", kind: "completed", eventId: "event-1" },
+  });
+  expect(unauthenticatedNotify.status()).toBe(401);
 });
 
 test("Service Worker 只接管静态壳，不缓存受保护页面", async ({ page }) => {
