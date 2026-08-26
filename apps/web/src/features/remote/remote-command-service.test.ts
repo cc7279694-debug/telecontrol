@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type {
-  RemoteEvent,
-  RemoteThreadSnapshot,
-} from "@codex-remote/protocol";
+import type { RemoteEvent, RemoteThreadSnapshot } from "@codex-remote/protocol";
 import type { RemoteClient } from "./remote-client";
 import { enqueueAndWaitForEvent } from "./remote-command-service";
 
@@ -61,7 +58,11 @@ describe("enqueueAndWaitForEvent", () => {
     await expect(
       enqueueAndWaitForEvent(
         fixture.client,
-        { type: "thread.read", workspaceId: "workspace-1", threadId: "thread-1" },
+        {
+          type: "thread.read",
+          workspaceId: "workspace-1",
+          threadId: "thread-1",
+        },
         acceptsSnapshot,
       ),
     ).resolves.toMatchObject({ requestMessageId: "request-1" });
@@ -91,10 +92,9 @@ describe("enqueueAndWaitForEvent", () => {
     await expect(waiting).resolves.toMatchObject({
       requestMessageId: "request-1",
     });
-    expect(fixture.enqueue).toHaveBeenCalledWith(
-      expect.anything(),
-      { idempotencyKey: "retry-1" },
-    );
+    expect(fixture.enqueue).toHaveBeenCalledWith(expect.anything(), {
+      idempotencyKey: "retry-1",
+    });
   });
 
   it("cleans up and rejects after the response timeout", async () => {
@@ -103,7 +103,11 @@ describe("enqueueAndWaitForEvent", () => {
     await expect(
       enqueueAndWaitForEvent(
         fixture.client,
-        { type: "thread.read", workspaceId: "workspace-1", threadId: "thread-1" },
+        {
+          type: "thread.read",
+          workspaceId: "workspace-1",
+          threadId: "thread-1",
+        },
         acceptsSnapshot,
         { timeoutMs: 1 },
       ),

@@ -1,7 +1,4 @@
-import type {
-  RemoteCommand,
-  RemoteEvent,
-} from "@codex-remote/protocol";
+import type { RemoteCommand, RemoteEvent } from "@codex-remote/protocol";
 import type { EnqueueOptions, RemoteClient } from "./remote-client";
 
 export interface WaitForEventOptions extends EnqueueOptions {
@@ -62,10 +59,7 @@ export async function enqueueAndWaitForEvent<T extends RemoteEvent>(
       .enqueue(command, enqueueOptions)
       .then((receipt) => {
         requestMessageId = receipt.messageId;
-        if (
-          earlyEvent &&
-          eventMessageId(earlyEvent) === requestMessageId
-        ) {
+        if (earlyEvent && eventMessageId(earlyEvent) === requestMessageId) {
           finishResolve(earlyEvent);
         }
       })
