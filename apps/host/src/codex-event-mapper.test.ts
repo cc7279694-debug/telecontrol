@@ -50,6 +50,8 @@ describe("CodexEventMapper", () => {
         id: 42,
         method: "item/commandExecution/requestApproval",
         params: {
+          threadId: "thread-1",
+          turnId: "turn-1",
           command: "type secret.txt",
           cwd: "C:\\private",
           reason: "Need access",
@@ -57,9 +59,23 @@ describe("CodexEventMapper", () => {
       }),
     ).toEqual({
       requestId: 42,
+      threadId: "thread-1",
+      turnId: "turn-1",
       method: "item/commandExecution/requestApproval",
       display: { title: "需要确认操作" },
       allowedDecisions: ["accept", "acceptForSession", "decline", "cancel"],
     });
+  });
+
+  it("fails closed when an approval has no task ownership", () => {
+    const mapper = new CodexEventMapper();
+
+    expect(
+      mapper.approvalRequest({
+        id: 43,
+        method: "item/commandExecution/requestApproval",
+        params: { threadId: "thread-1" },
+      }),
+    ).toBeNull();
   });
 });

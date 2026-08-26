@@ -98,10 +98,11 @@ function eventToAction(event: RemoteEvent): RemoteAction {
       return { type: "stream.delta", event };
     case "turn.status":
       return { type: "turn.status", event };
+    case "approval.request":
+      return { type: "approval.request", event };
+    case "command.receipt":
+      return { type: "command.receipt", event };
     case "error":
       return { type: "error", event };
-    case "approval.request":
-    case "command.receipt":
-      return { type: "noop" };
   }
 }

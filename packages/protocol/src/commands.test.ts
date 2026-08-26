@@ -105,6 +105,8 @@ describe("remote commands", () => {
         type: "approval.request" as const,
         requestMessageId,
         requestId: "approval-1",
+        threadId: "thread-1",
+        turnId: "turn-1",
         method: "item/commandExecution/requestApproval",
         display: { title: "需要确认操作" },
         allowedDecisions: ["accept", "decline"] as const,

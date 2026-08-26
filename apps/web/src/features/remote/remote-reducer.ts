@@ -11,6 +11,14 @@ export interface RemoteState {
   threadSnapshots: Record<string, RemoteThreadSnapshot>;
   streams: Record<string, { sequence: number; text: string }>;
   turnStatuses: Record<string, string>;
+  pendingApprovals: Record<
+    string,
+    Extract<RemoteEvent, { type: "approval.request" }>
+  >;
+  commandReceipts: Record<
+    string,
+    Extract<RemoteEvent, { type: "command.receipt" }>
+  >;
   lastTurnStatus: string | null;
   online: boolean;
   observedAt: string | null;
@@ -24,6 +32,8 @@ export const initialRemoteState: RemoteState = {
   threadSnapshots: {},
   streams: {},
   turnStatuses: {},
+  pendingApprovals: {},
+  commandReceipts: {},
   lastTurnStatus: null,
   online: false,
   observedAt: null,
@@ -57,6 +67,14 @@ export type RemoteAction =
   | {
       type: "turn.status";
       event: Extract<RemoteEvent, { type: "turn.status" }>;
+    }
+  | {
+      type: "approval.request";
+      event: Extract<RemoteEvent, { type: "approval.request" }>;
+    }
+  | {
+      type: "command.receipt";
+      event: Extract<RemoteEvent, { type: "command.receipt" }>;
     }
   | { type: "error"; event: Extract<RemoteEvent, { type: "error" }> };
 
@@ -120,14 +138,44 @@ export function remoteReducer(
         },
       };
     }
-    case "turn.status":
+    case "turn.status": {
+      const turnKey = `${action.event.threadId}:${action.event.turnId}`;
+      const pendingApprovals =
+        action.event.status === "completed" ||
+        action.event.status === "failed" ||
+        action.event.status === "interrupted"
+          ? Object.fromEntries(
+              Object.entries(state.pendingApprovals).filter(
+                ([, approval]) =>
+                  approval.threadId !== action.event.threadId ||
+                  approval.turnId !== action.event.turnId,
+              ),
+            )
+          : state.pendingApprovals;
       return {
         ...state,
         lastTurnStatus: action.event.status,
         turnStatuses: {
           ...state.turnStatuses,
-          [`${action.event.threadId}:${action.event.turnId}`]:
-            action.event.status,
+          [turnKey]: action.event.status,
+        },
+        pendingApprovals,
+      };
+    }
+    case "approval.request":
+      return {
+        ...state,
+        pendingApprovals: {
+          ...state.pendingApprovals,
+          [String(action.event.requestId)]: action.event,
+        },
+      };
+    case "command.receipt":
+      return {
+        ...state,
+        commandReceipts: {
+          ...state.commandReceipts,
+          [action.event.messageId]: action.event,
         },
       };
     case "error":

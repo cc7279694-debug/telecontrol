@@ -22,6 +22,8 @@ export interface ThreadMappingOptions {
 
 export interface ApprovalDisplay {
   requestId: string | number;
+  threadId: string;
+  turnId: string;
   method: string;
   display: { title: string };
   allowedDecisions: ["accept", "acceptForSession", "decline", "cancel"];
@@ -78,9 +80,17 @@ export class CodexEventMapper {
     };
   }
 
-  approvalRequest(request: JsonRpcServerRequest): ApprovalDisplay {
+  approvalRequest(request: JsonRpcServerRequest): ApprovalDisplay | null {
+    const params = asRecord(request.params);
+    const threadId = stringValue(params.threadId);
+    const turnId = stringValue(params.turnId);
+    if (!threadId || !turnId) {
+      return null;
+    }
     return {
       requestId: request.id,
+      threadId,
+      turnId,
       method: request.method,
       display: { title: "需要确认操作" },
       allowedDecisions: ["accept", "acceptForSession", "decline", "cancel"],

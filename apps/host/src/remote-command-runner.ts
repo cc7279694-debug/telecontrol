@@ -417,6 +417,13 @@ export class RemoteCommandRunner {
       return;
     }
     const display = this.mapper.approvalRequest(request);
+    if (!display) {
+      await this.adapter.resolveApproval({
+        requestId: request.id,
+        decision: "cancel",
+      });
+      return;
+    }
     await this.sendResponse(session.key, session.deviceId, {
       type: "approval.request",
       requestMessageId: session.requestMessageId,

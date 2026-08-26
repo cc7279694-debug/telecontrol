@@ -174,6 +174,8 @@ export const remoteEventSchema = z.discriminatedUnion("type", [
       type: z.literal("approval.request"),
       requestMessageId,
       requestId: z.union([z.string().min(1), z.number().int().nonnegative()]),
+      threadId,
+      turnId,
       method: z.string().min(1),
       display: z
         .object({ title: z.string().min(1), detail: z.string().optional() })
