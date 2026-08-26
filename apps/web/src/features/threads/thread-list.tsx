@@ -69,7 +69,7 @@ export function ThreadList({
             </button>
             <Link
               className="sr-only"
-              href={`/hosts/${hostId}/threads/${thread.id}`}
+              href={`/hosts/${hostId}/threads/${thread.id}?workspaceId=${encodeURIComponent(thread.workspaceId)}`}
             >
               打开 {thread.title || "未命名任务"}
             </Link>
