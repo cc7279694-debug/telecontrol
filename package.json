@@ -12,6 +12,7 @@
     "test:db": "supabase test db --local",
     "test:e2e": "npm run test:e2e --workspace @codex-remote/web",
     "test:watch": "vitest",
+    "dev:host": "npm run dev --workspace @codex-remote/host",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "format:check": "prettier --check .",

@@ -3,14 +3,46 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "dist/desktop/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "dev": "npm run build && electron .",
+    "build": "npm run build --workspace @codex-remote/protocol && tsc -p tsconfig.json && tsc -p tsconfig.desktop.json && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.desktop.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "test:e2e": "playwright test",
+    "package:win": "npm run build && electron-builder --win --x64"
   },
   "dependencies": {
+    "@openai/codex": "0.149.0",
     "@codex-remote/protocol": "0.1.0",
-    "@supabase/supabase-js": "2.112.3"
+    "@supabase/supabase-js": "2.112.3",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "1.33.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwind-merge": "3.6.0",
+    "tailwindcss": "4.3.3",
+    "zod": "3.25.76"
   },
   "devDependencies": {
-    "@types/node": "24.13.3"
+    "@tailwindcss/vite": "4.3.3",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.6",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.11",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.1.0",
+    "electron": "44.0.0",
+    "electron-builder": "26.15.3",
+    "jsdom": "30.0.1",
+    "vite": "8.2.2"
+  },
+  "build": {
+    "appId": "com.codexremote.host",
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ]
   }
 }
