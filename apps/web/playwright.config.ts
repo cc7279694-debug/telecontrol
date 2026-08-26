@@ -1,6 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
+import { loadLocalSupabaseEnv } from "./e2e/helpers/local-supabase";
 
 const port = 3100;
+const localSupabase = loadLocalSupabaseEnv();
 
 export default defineConfig({
   testDir: "./e2e",
@@ -40,9 +42,12 @@ export default defineConfig({
     env: {
       ...process.env,
       NEXT_PUBLIC_SUPABASE_URL:
-        process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:59999",
+        process.env.NEXT_PUBLIC_SUPABASE_URL ??
+        localSupabase?.apiUrl ??
+        "http://127.0.0.1:59999",
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:
         process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+        localSupabase?.publishableKey ??
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJvbGUiOiJhbm9uIn0.local-e2e-signature",
     },
   },

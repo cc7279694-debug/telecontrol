@@ -61,6 +61,7 @@ export class EncryptedFakeHost {
   private channel: Channel | undefined;
   private timer: ReturnType<typeof setInterval> | undefined;
   private readonly ownerId: string;
+  private readonly receivedCommandCounts = new Map<string, number>();
   private approvalThreadId = "thread-idle";
   private approvalTurnId = "turn-e2e";
   private readonly threads = new Map<string, RemoteThreadSnapshot>();
@@ -152,6 +153,46 @@ export class EncryptedFakeHost {
     await this.admin.from("hosts").delete().eq("id", this.hostId);
   }
 
+  async waitForPairing(timeoutMs = 10_000): Promise<void> {
+    await this.waitFor(
+      async () => {
+        const result = await this.admin
+          .from("host_device_links")
+          .select("host_id")
+          .eq("host_id", this.hostId)
+          .eq("owner_id", this.ownerId)
+          .is("revoked_at", null)
+          .maybeSingle();
+        return Boolean(result.data);
+      },
+      timeoutMs,
+      "Fake Host 等待配对超时",
+    );
+  }
+
+  async waitForCommand(
+    kind: string,
+    count = 1,
+    timeoutMs = 15_000,
+  ): Promise<void> {
+    await this.waitFor(
+      async () => {
+        const received = this.receivedCommandCounts.get(kind) ?? 0;
+        if (received >= count) return true;
+
+        const processed = await this.admin
+          .from("remote_commands")
+          .select("id", { count: "exact", head: true })
+          .eq("host_id", this.hostId)
+          .eq("kind", kind)
+          .in("status", ["leased", "completed", "failed"]);
+        return (processed.count ?? 0) >= count;
+      },
+      timeoutMs,
+      `Fake Host 等待 ${kind} 命令超时`,
+    );
+  }
+
   private async waitForDevice(): Promise<void> {
     const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
@@ -187,8 +228,16 @@ export class EncryptedFakeHost {
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle<CommandRow>();
-    if (result.error || !result.data) return;
+    if (result.error) {
+      return;
+    }
+    if (!result.data) return;
     const row = result.data;
+    this.receivedCommandCounts.set(
+      row.kind,
+      (this.receivedCommandCounts.get(row.kind) ?? 0) + 1,
+    );
+    if (row.protocol_version !== 1) return;
     const leaseOwner = `fake-host-${this.hostId}`;
     const leased = await this.admin
       .from("remote_commands")
@@ -206,7 +255,17 @@ export class EncryptedFakeHost {
     try {
       command = await openRemotePayload<RemoteCommand>({
         key: this.sessionKey,
-        envelope: row as unknown as RemoteEnvelope,
+        envelope: {
+          protocolVersion: 1,
+          messageId: row.message_id,
+          hostId: row.host_id,
+          deviceId: row.device_id,
+          kind: row.kind as RemoteEnvelope["kind"],
+          sentAt: row.sent_at,
+          expiresAt: row.expires_at,
+          nonce: row.nonce,
+          ciphertext: row.ciphertext,
+        },
       });
       for (const event of this.eventsFor(command, row.message_id)) {
         await this.publish(event);
@@ -226,11 +285,12 @@ export class EncryptedFakeHost {
       payload: event,
       ttlMs: 30_000,
     });
-    await this.channel.send({
+    const result = await this.channel.send({
       type: "broadcast",
       event: "host.event",
       payload: envelope,
     });
+    if (result !== "ok") return;
   }
 
   private async complete(
@@ -422,6 +482,19 @@ export class EncryptedFakeHost {
       observedAt: new Date().toISOString(),
       workspaces: [{ id: this.workspaceId, name: "演示项目" }],
     };
+  }
+
+  private async waitFor(
+    predicate: () => Promise<boolean>,
+    timeoutMs: number,
+    message: string,
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (await predicate()) return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(message);
   }
 
   private snapshot(

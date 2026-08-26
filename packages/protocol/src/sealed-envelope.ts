@@ -57,9 +57,14 @@ export function remoteEnvelopeAdditionalData(
     envelope.hostId,
     envelope.deviceId,
     envelope.kind,
-    envelope.sentAt,
-    envelope.expiresAt,
+    canonicalTimestamp(envelope.sentAt),
+    canonicalTimestamp(envelope.expiresAt),
   ]);
+}
+
+function canonicalTimestamp(value: string): string {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : value;
 }
 
 export async function sealRemotePayload<T extends RemotePayload>(

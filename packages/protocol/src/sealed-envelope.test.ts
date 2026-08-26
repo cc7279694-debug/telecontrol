@@ -33,6 +33,27 @@ describe("sealed remote payloads", () => {
     );
   });
 
+  it("survives database timestamp formatting changes", async () => {
+    const key = await createSessionKey();
+    const command = { type: "host.snapshot" as const };
+    const envelope = await sealRemotePayload({
+      key,
+      hostId: "host-1",
+      deviceId: "device-1",
+      payload: command,
+      ttlMs: 30_000,
+    });
+    const databaseEnvelope = {
+      ...envelope,
+      sentAt: envelope.sentAt.replace("Z", "+00:00"),
+      expiresAt: envelope.expiresAt.replace("Z", "+00:00"),
+    };
+
+    await expect(
+      openRemotePayload({ key, envelope: databaseEnvelope }),
+    ).resolves.toEqual(command);
+  });
+
   it("rejects a changed host id before accepting the plaintext", async () => {
     const key = await createSessionKey();
     const envelope = await sealRemotePayload({

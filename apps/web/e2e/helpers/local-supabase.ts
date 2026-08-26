@@ -20,11 +20,15 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 export function loadLocalSupabaseEnv(): LocalSupabaseEnv | null {
   let output: string;
   try {
-    output = execFileSync("supabase.cmd", ["status", "-o", "env"], {
-      cwd: process.cwd().split(`${String.raw`apps\web`}`)[0],
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
+    output = execFileSync(
+      "cmd.exe",
+      ["/d", "/s", "/c", "supabase.cmd status -o env"],
+      {
+        cwd: process.cwd().split(`${String.raw`apps\web`}`)[0],
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
   } catch {
     return null;
   }

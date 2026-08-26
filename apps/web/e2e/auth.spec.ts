@@ -36,6 +36,16 @@ test("本地 OTP 登录闭环", async ({ page }) => {
     const otp = await waitForEmailOtp(env!, user.email);
     await page.getByLabel("验证码").fill(otp);
     await page.getByRole("button", { name: "登录" }).click();
+    await expect
+      .poll(
+        async () =>
+          (await page.context().cookies()).some(({ name }) =>
+            /^sb-.+-auth-token(?:\.\d+)?$/.test(name),
+          ),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+    await page.goto("/hosts");
     await expect(page).toHaveURL(/\/hosts$/);
   } finally {
     await user.remove();

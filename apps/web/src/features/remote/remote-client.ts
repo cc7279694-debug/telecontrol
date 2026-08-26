@@ -105,6 +105,7 @@ export class BrowserRemoteClient implements RemoteClient {
   private readonly sequences = new Map<string, number>();
   private recovering = false;
   private connected = false;
+  private connectAttempt = 0;
   private connectionInput: { hostId: string; deviceId: string } | undefined;
   private lifecycleListeners:
     { onOnline: () => void; onVisibilityChange: () => void } | undefined;
@@ -116,15 +117,19 @@ export class BrowserRemoteClient implements RemoteClient {
   ) {}
 
   async connect(input: { hostId: string; deviceId: string }): Promise<void> {
-    await this.disconnect();
+    const attempt = ++this.connectAttempt;
+    await this.disconnectInternal();
+    this.assertCurrentAttempt(attempt);
     this.connectionInput = input;
     const claimsResponse = await this.client.auth.getClaims();
+    this.assertCurrentAttempt(attempt);
     const ownerId = claimsResponse.data?.claims?.sub;
     if (claimsResponse.error || typeof ownerId !== "string") {
       throw new Error("登录会话无效，请重新登录");
     }
 
     const identity = await this.deviceStore.load(ownerId);
+    this.assertCurrentAttempt(attempt);
     if (!identity || identity.deviceId !== input.deviceId) {
       throw new Error("设备未注册，请先完成配对");
     }
@@ -134,6 +139,7 @@ export class BrowserRemoteClient implements RemoteClient {
       .select("id,public_key,revoked_at")
       .eq("id", input.hostId)
       .maybeSingle<HostKeyRow>();
+    this.assertCurrentAttempt(attempt);
     if (
       hostResponse.error ||
       !hostResponse.data ||
@@ -150,11 +156,13 @@ export class BrowserRemoteClient implements RemoteClient {
     }
     const key = await deriveAesSessionKey(identity.privateKey, hostPublicKey);
     const sessionResponse = await this.client.auth.getSession();
+    this.assertCurrentAttempt(attempt);
     const accessToken = sessionResponse.data.session?.access_token;
     if (sessionResponse.error || !accessToken) {
       throw new Error("登录会话已失效，请重新登录");
     }
     await this.client.realtime.setAuth(accessToken);
+    this.assertCurrentAttempt(attempt);
 
     const channel = this.client.channel(`host:${input.hostId}`, {
       config: { private: true },
@@ -170,30 +178,43 @@ export class BrowserRemoteClient implements RemoteClient {
     };
     this.channel = channel;
 
-    await new Promise<void>((resolve, reject) => {
-      channel.subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          this.connected = true;
-          this.attachLifecycleListeners();
-          resolve();
-        } else if (
-          status === "CHANNEL_ERROR" ||
-          status === "TIMED_OUT" ||
-          status === "CLOSED"
-        ) {
-          const wasConnected = this.connected;
-          this.connected = false;
-          if (wasConnected) {
-            void this.recoverConnection();
-          } else {
-            reject(new Error(`实时连接失败：${status}`));
+    try {
+      await new Promise<void>((resolve, reject) => {
+        channel.subscribe((status) => {
+          if (status === "SUBSCRIBED") {
+            this.connected = true;
+            this.attachLifecycleListeners();
+            resolve();
+          } else if (
+            status === "CHANNEL_ERROR" ||
+            status === "TIMED_OUT" ||
+            status === "CLOSED"
+          ) {
+            const wasConnected = this.connected;
+            this.connected = false;
+            if (wasConnected) {
+              void this.recoverConnection();
+            } else {
+              reject(new Error(`实时连接失败：${status}`));
+            }
           }
-        }
+        });
       });
-    });
+      this.assertCurrentAttempt(attempt);
+    } catch (error) {
+      if (attempt !== this.connectAttempt) {
+        await channel.unsubscribe();
+      }
+      throw error;
+    }
   }
 
   async disconnect(): Promise<void> {
+    ++this.connectAttempt;
+    await this.disconnectInternal();
+  }
+
+  private async disconnectInternal(): Promise<void> {
     const channel = this.channel;
     this.channel = undefined;
     this.context = undefined;
@@ -203,6 +224,12 @@ export class BrowserRemoteClient implements RemoteClient {
     this.sequences.clear();
     if (channel) {
       await channel.unsubscribe();
+    }
+  }
+
+  private assertCurrentAttempt(attempt: number): void {
+    if (attempt !== this.connectAttempt) {
+      throw new Error("远程连接已被新的连接请求替代");
     }
   }
 
