@@ -1,4 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import { InstallPrompt } from "../components/install-prompt";
+import { ServiceWorkerRegister } from "../components/service-worker-register";
+import { ThemeProvider } from "../components/theme-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,8 +19,14 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN">
-      <body>{children}</body>
+    <html lang="zh-CN" suppressHydrationWarning>
+      <body>
+        <ThemeProvider>
+          <ServiceWorkerRegister />
+          <InstallPrompt />
+          {children}
+        </ThemeProvider>
+      </body>
     </html>
   );
 }

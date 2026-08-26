@@ -1,5 +1,6 @@
 import React from "react";
 import Link from "next/link";
+import { ThemeToggle } from "./theme-toggle";
 
 export function AppShell({
   children,
@@ -18,14 +19,17 @@ export function AppShell({
           >
             Codex Remote
           </Link>
-          {action ? (
-            <Link
-              className="inline-flex min-h-11 items-center justify-center rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-900 transition hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 focus-visible:ring-offset-2"
-              href="/pair"
-            >
-              添加电脑
-            </Link>
-          ) : null}
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            {action ? (
+              <Link
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-900 transition hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 focus-visible:ring-offset-2"
+                href="/pair"
+              >
+                添加电脑
+              </Link>
+            ) : null}
+          </div>
         </header>
         {children}
       </div>
