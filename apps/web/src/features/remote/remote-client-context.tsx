@@ -21,6 +21,13 @@ export interface RemoteProviderProps {
   client: RemoteClient;
   hostId: string;
   deviceId: string;
+  onConnectionStateChange?: (
+    state:
+      | { status: "connecting" }
+      | { status: "ready" }
+      | { status: "offline"; message: string }
+      | { status: "error"; message: string },
+  ) => void;
   children: React.ReactNode;
 }
 
@@ -28,12 +35,14 @@ export function RemoteProvider({
   client,
   hostId,
   deviceId,
+  onConnectionStateChange,
   children,
 }: RemoteProviderProps) {
   const [state, dispatch] = useReducer(remoteReducer, initialRemoteState);
 
   useEffect(() => {
     let disposed = false;
+    onConnectionStateChange?.({ status: "connecting" });
     const unsubscribe = client.subscribe((event) => {
       if (!disposed) {
         dispatch(eventToAction(event));
@@ -45,11 +54,22 @@ export function RemoteProvider({
       .then(async () => {
         if (!disposed) {
           dispatch({ type: "connected", observedAt: new Date().toISOString() });
-          await client.requestSnapshot();
+          const snapshot = await client.requestSnapshotAndWait();
+          if (!disposed) {
+            onConnectionStateChange?.(
+              snapshot.online
+                ? { status: "ready" }
+                : { status: "offline", message: "电脑当前离线" },
+            );
+          }
         }
       })
       .catch(() => {
         if (!disposed) {
+          onConnectionStateChange?.({
+            status: "error",
+            message: "连接电脑失败，请重试",
+          });
           dispatch({
             type: "error",
             event: {
@@ -67,7 +87,7 @@ export function RemoteProvider({
       unsubscribe();
       void client.disconnect();
     };
-  }, [client, deviceId, hostId]);
+  }, [client, deviceId, hostId, onConnectionStateChange]);
 
   return (
     <RemoteContext.Provider value={{ state, client }}>
