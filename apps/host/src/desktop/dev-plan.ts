@@ -6,8 +6,9 @@ const desktopDir = path.dirname(fileURLToPath(import.meta.url));
 export const hostRoot = path.resolve(desktopDir, "..", "..");
 
 export type WatchCommandPlan = {
-  name: "protocol" | "host-core" | "desktop" | "renderer";
+  name: "typescript" | "renderer";
   args: string[];
+  rebuilds: Array<"protocol" | "host-core" | "desktop" | "renderer">;
 };
 
 export type RelaunchWatchPlan = {
@@ -19,46 +20,35 @@ export const initialBuildCommand = ["run", "build"] as const;
 
 export const persistentWatchCommands: WatchCommandPlan[] = [
   {
-    name: "protocol",
+    name: "typescript",
     args: [
       "exec",
       "--",
       "tsc",
-      "-p",
+      "-b",
       "../../packages/protocol/tsconfig.json",
-      "-w",
-      "--preserveWatchOutput",
-    ],
-  },
-  {
-    name: "host-core",
-    args: ["exec", "--", "tsc", "-p", "tsconfig.json", "-w", "--preserveWatchOutput"],
-  },
-  {
-    name: "desktop",
-    args: [
-      "exec",
-      "--",
-      "tsc",
-      "-p",
+      "tsconfig.json",
       "tsconfig.desktop.json",
       "-w",
       "--preserveWatchOutput",
     ],
+    rebuilds: ["protocol", "host-core", "desktop"],
   },
   {
     name: "renderer",
     args: ["exec", "--", "vite", "build", "--watch", "--emptyOutDir", "false"],
+    rebuilds: ["renderer"],
   },
 ];
 
 export const relaunchWatchPlans: RelaunchWatchPlan[] = [
   {
     rootRelativePath: "dist",
-    triggers: ["desktop/", "renderer/index.html", "renderer/assets/"],
-  },
-  {
-    rootRelativePath: "../../packages/protocol/dist",
-    triggers: ["."],
+    triggers: [
+      "desktop/main.js",
+      "desktop/preload.js",
+      "renderer/index.html",
+      "renderer/assets/",
+    ],
   },
 ];

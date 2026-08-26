@@ -27,7 +27,7 @@ describe("Windows Host build contract", () => {
     });
   });
 
-  it("uses a structured dev watch plan that includes protocol, host core, desktop, and renderer rebuilds", async () => {
+  it("uses a structured dev watch plan that rebuilds protocol through desktop before relaunch", async () => {
     const packageJson = readJsonFile<{
       scripts?: Record<string, string>;
     }>(path.join(hostRoot, "package.json"));
@@ -39,6 +39,7 @@ describe("Windows Host build contract", () => {
     const persistentWatchCommands = devPlanModule.persistentWatchCommands as Array<{
       name: string;
       args: string[];
+      rebuilds?: string[];
     }>;
     const relaunchWatchPlans = devPlanModule.relaunchWatchPlans as Array<{
       rootRelativePath: string;
@@ -46,62 +47,48 @@ describe("Windows Host build contract", () => {
     }>;
 
     expect(devScript).toBe("tsx src/desktop/dev.ts --watch-electron");
-    expect(persistentWatchCommands).toEqual(
-      expect.arrayContaining([
-        {
-          name: "protocol",
-          args: [
-            "exec",
-            "--",
-            "tsc",
-            "-p",
-            "../../packages/protocol/tsconfig.json",
-            "-w",
-            "--preserveWatchOutput",
-          ],
-        },
-        {
-          name: "host-core",
-          args: [
-            "exec",
-            "--",
-            "tsc",
-            "-p",
-            "tsconfig.json",
-            "-w",
-            "--preserveWatchOutput",
-          ],
-        },
-        {
-          name: "desktop",
-          args: [
-            "exec",
-            "--",
-            "tsc",
-            "-p",
-            "tsconfig.desktop.json",
-            "-w",
-            "--preserveWatchOutput",
-          ],
-        },
-        {
-          name: "renderer",
-          args: ["exec", "--", "vite", "build", "--watch", "--emptyOutDir", "false"],
-        },
-      ]),
-    );
-    expect(relaunchWatchPlans).toEqual(
-      expect.arrayContaining([
-        {
-          rootRelativePath: "dist",
-          triggers: ["desktop/", "renderer/index.html", "renderer/assets/"],
-        },
-        {
-          rootRelativePath: "../../packages/protocol/dist",
-          triggers: ["."],
-        },
-      ]),
-    );
+    expect(persistentWatchCommands).toEqual([
+      {
+        name: "typescript",
+        rebuilds: ["protocol", "host-core", "desktop"],
+        args: [
+          "exec",
+          "--",
+          "tsc",
+          "-b",
+          "../../packages/protocol/tsconfig.json",
+          "tsconfig.json",
+          "tsconfig.desktop.json",
+          "-w",
+          "--preserveWatchOutput",
+        ],
+      },
+      {
+        name: "renderer",
+        rebuilds: ["renderer"],
+        args: ["exec", "--", "vite", "build", "--watch", "--emptyOutDir", "false"],
+      },
+    ]);
+    expect(relaunchWatchPlans).toEqual([
+      {
+        rootRelativePath: "dist",
+        triggers: [
+          "desktop/main.js",
+          "desktop/preload.js",
+          "renderer/index.html",
+          "renderer/assets/",
+        ],
+      },
+    ]);
+  });
+
+  it("keeps the renderer build config local and deterministic", () => {
+    const viteConfigSource = readFileSync(path.join(hostRoot, "vite.config.ts"), "utf8");
+
+    expect(viteConfigSource).toContain('base: "./"');
+    expect(viteConfigSource).toContain('outDir: "dist/renderer"');
+    expect(viteConfigSource).toContain("emptyOutDir: false");
+    expect(viteConfigSource).toContain('input: path.join(hostRoot, "index.html")');
   });
 
   it("does not depend on electron-updater", () => {
@@ -112,21 +99,6 @@ describe("Windows Host build contract", () => {
 
     expect(packageJson.dependencies?.["electron-updater"]).toBeUndefined();
     expect(packageJson.devDependencies?.["electron-updater"]).toBeUndefined();
-  });
-
-  it("builds the renderer into dist/renderer with local assets only", async () => {
-    const viteConfigPath = path.join(hostRoot, "vite.config.ts");
-
-    expect(existsSync(viteConfigPath)).toBe(true);
-
-    const viteConfigModule = await import(pathToFileURL(viteConfigPath).href);
-    const viteConfig =
-      typeof viteConfigModule.default === "function"
-        ? await viteConfigModule.default({ command: "build", mode: "test" })
-        : viteConfigModule.default;
-
-    expect(viteConfig.build?.outDir).toBe("dist/renderer");
-    expect(viteConfig.base).toBe("./");
   });
 
   it("keeps desktop and preload entries separated for Electron", () => {
