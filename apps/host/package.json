@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/desktop/main.js",
   "scripts": {
-    "dev": "npm run build && electron .",
+    "dev": "tsx src/desktop/dev.ts --watch-electron",
     "build": "npm run build --workspace @codex-remote/protocol && tsc -p tsconfig.json && tsc -p tsconfig.desktop.json && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.desktop.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "test:e2e": "playwright test",

@@ -27,6 +27,19 @@ describe("Windows Host build contract", () => {
     });
   });
 
+  it("uses a watch-driven dev command instead of a one-shot build shell", () => {
+    const packageJson = readJsonFile<{
+      scripts?: Record<string, string>;
+    }>(path.join(hostRoot, "package.json"));
+
+    const devScript = packageJson.scripts?.dev;
+
+    expect(devScript).toBeDefined();
+    expect(devScript).not.toBe("npm run build && electron .");
+    expect(devScript).toContain("watch");
+    expect(devScript).toContain("electron");
+  });
+
   it("does not depend on electron-updater", () => {
     const packageJson = readJsonFile<{
       dependencies?: Record<string, string>;
