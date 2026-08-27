@@ -20,6 +20,11 @@ import {
   registerIpcController,
   type DesktopIpcHandlers,
 } from "./ipc-controller.js";
+import {
+  createDataResetHandlers,
+  type DataResetDesktopHandlers,
+} from "./data-reset-handlers.js";
+import { createDataResetController } from "./data-reset.js";
 import { createLoginItemController } from "./login-item.js";
 import { createTrayController, type TrayMenuItem } from "./tray-controller.js";
 import { createWindowManager, type ManagedWindow } from "./window-manager.js";
@@ -89,6 +94,12 @@ if (!hasSingleInstanceLock) {
   });
   let ipcController: ReturnType<typeof registerIpcController> | undefined;
   let trayController: ReturnType<typeof createTrayController> | undefined;
+  const unavailableAction = async () => unavailableActionResult;
+  const unavailableDataResetHandlers: DataResetDesktopHandlers = {
+    beginDataReset: async () => ({ phrase: "此功能尚未启用" }),
+    confirmDataReset: unavailableAction,
+  };
+  let dataResetHandlers = unavailableDataResetHandlers;
 
   function updateDesktopState(nextState: DesktopState) {
     desktopState = DesktopStateSchema.parse(nextState);
@@ -96,7 +107,6 @@ if (!hasSingleInstanceLock) {
     trayController?.refresh();
   }
 
-  const unavailableAction = async () => unavailableActionResult;
   const handlers: DesktopIpcHandlers = {
     getDesktopState: async () => desktopState,
     requestOtp: unavailableAction,
@@ -120,8 +130,8 @@ if (!hasSingleInstanceLock) {
       };
     },
     openLogFolder: unavailableAction,
-    beginDataReset: async () => ({ phrase: "此功能尚未启用" }),
-    confirmDataReset: unavailableAction,
+    beginDataReset: () => dataResetHandlers.beginDataReset(),
+    confirmDataReset: (input) => dataResetHandlers.confirmDataReset(input),
   };
 
   app.on("before-quit", () => {
@@ -138,6 +148,9 @@ if (!hasSingleInstanceLock) {
 
   void app.whenReady().then(async () => {
     installAppProtocol(protocol, rendererRoot);
+    dataResetHandlers = createDataResetHandlers(
+      createDataResetController({ userDataDir: app.getPath("userData") }),
+    );
     updateDesktopState({
       ...desktopState,
       openAtLogin: loginItemController.isEnabled(),

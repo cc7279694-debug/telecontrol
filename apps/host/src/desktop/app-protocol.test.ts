@@ -179,6 +179,7 @@ describe("app protocol", () => {
         appEvents.set(event, listener);
       }),
       getFileIcon: vi.fn(async () => ({ name: "app-icon" })),
+      getPath: vi.fn(() => "C:\\Users\\demo\\AppData\\Roaming\\Codex Remote"),
       getLoginItemSettings: vi.fn(() => ({ openAtLogin: false })),
       setLoginItemSettings: vi.fn(),
     };

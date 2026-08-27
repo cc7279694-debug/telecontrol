@@ -124,18 +124,57 @@ describe("Windows Host build contract", () => {
     const desktopTsconfig = readJsonFile<{
       compilerOptions?: { outDir?: string; rootDir?: string };
       include?: string[];
-      exclude?: string[];
     }>(path.join(hostRoot, "tsconfig.desktop.json"));
+    const desktopBuildTsconfig = readJsonFile<{
+      exclude?: string[];
+    }>(path.join(hostRoot, "tsconfig.desktop.build.json"));
 
     expect(desktopTsconfig.compilerOptions?.rootDir).toBe("src/desktop");
     expect(desktopTsconfig.compilerOptions?.outDir).toBe("dist/desktop");
     expect(desktopTsconfig.include).toEqual(["src/desktop/**/*.ts"]);
-    expect(desktopTsconfig.exclude).toEqual(["src/**/*.test.ts", "src/**/*.test.tsx"]);
+    expect(desktopBuildTsconfig.exclude).toEqual([
+      "src/**/*.test.ts",
+      "src/**/*.test.tsx",
+    ]);
     expect(existsSync(path.join(hostRoot, "src", "desktop", "main.ts"))).toBe(
       true,
     );
     expect(
       existsSync(path.join(hostRoot, "src", "desktop", "preload.ts")),
     ).toBe(true);
+  });
+
+  it("typechecks tests while keeping test files out of production builds", () => {
+    const hostTsconfig = readJsonFile<{
+      exclude?: string[];
+    }>(path.join(hostRoot, "tsconfig.json"));
+    const testTsconfig = readJsonFile<{
+      compilerOptions?: { noEmit?: boolean; jsx?: string; rootDir?: string };
+      include?: string[];
+      exclude?: string[];
+    }>(path.join(hostRoot, "tsconfig.test.json"));
+    const buildTsconfig = readJsonFile<{
+      exclude?: string[];
+    }>(path.join(hostRoot, "tsconfig.build.json"));
+
+    expect(hostTsconfig.exclude).toEqual([
+      "src/**/*.test.ts",
+      "src/**/*.test.tsx",
+    ]);
+    expect(testTsconfig.compilerOptions).toMatchObject({
+      noEmit: true,
+      jsx: "react-jsx",
+      rootDir: "../..",
+    });
+    expect(testTsconfig.include).toEqual([
+      "src/**/*.ts",
+      "src/**/*.tsx",
+      "../../packages/protocol/src/**/*.ts",
+    ]);
+    expect(testTsconfig.exclude).toEqual([]);
+    expect(buildTsconfig.exclude).toEqual([
+      "src/**/*.test.ts",
+      "src/**/*.test.tsx",
+    ]);
   });
 });

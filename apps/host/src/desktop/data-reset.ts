@@ -62,6 +62,13 @@ function isMissingFile(error: unknown) {
   );
 }
 
+function normalizedWindowsPath(filePath: string) {
+  return path.win32
+    .normalize(path.resolve(filePath))
+    .replace(/[\\/]+$/, "")
+    .toLowerCase();
+}
+
 export function createDataResetController({
   userDataDir,
   fileSystem = defaultFileSystem,
@@ -76,6 +83,7 @@ export function createDataResetController({
   ttlMs?: number;
 }) {
   const resolvedUserDataDir = path.resolve(userDataDir);
+  const normalizedUserDataDir = normalizedWindowsPath(resolvedUserDataDir);
   let pending: { phrase: string; expiresAt: number } | undefined;
 
   function begin() {
@@ -90,8 +98,9 @@ export function createDataResetController({
     for (const targetName of resetTargetNames) {
       const targetPath = path.resolve(resolvedUserDataDir, targetName);
       if (
-        path.dirname(targetPath) !== resolvedUserDataDir ||
-        path.basename(targetPath) !== targetName
+        normalizedWindowsPath(path.dirname(targetPath)) !==
+          normalizedUserDataDir ||
+        path.basename(targetPath).toLowerCase() !== targetName.toLowerCase()
       ) {
         throw new DataResetError("RESET_TARGET_UNSAFE");
       }
@@ -107,8 +116,9 @@ export function createDataResetController({
       }
 
       if (
-        path.dirname(realTargetPath) !== resolvedUserDataDir ||
-        path.basename(realTargetPath) !== targetName
+        normalizedWindowsPath(path.dirname(realTargetPath)) !==
+          normalizedUserDataDir ||
+        path.basename(realTargetPath).toLowerCase() !== targetName.toLowerCase()
       ) {
         throw new DataResetError("RESET_TARGET_UNSAFE");
       }

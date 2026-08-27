@@ -124,4 +124,22 @@ describe("data reset", () => {
     );
     expect(fileSystem.removed).toHaveLength(0);
   });
+
+  it("accepts case-only path differences from Windows realpath", async () => {
+    const fileSystem = new MemoryResetFileSystem();
+    addResetFiles(fileSystem);
+    for (const [filePath, resolvedPath] of fileSystem.realPaths) {
+      fileSystem.realPaths.set(filePath, resolvedPath.toUpperCase());
+    }
+    const controller = createController(fileSystem);
+
+    const reset = controller.begin();
+
+    await expect(controller.confirm({ phrase: reset.phrase })).resolves.toEqual(
+      {
+        ok: true,
+        message: "本机数据已删除",
+      },
+    );
+  });
 });
