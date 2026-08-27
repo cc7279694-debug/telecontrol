@@ -1,5 +1,20 @@
 import { z } from "zod";
 
+const workspaceStateSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string().trim().min(1).max(120),
+    path: z.string().trim().min(1).max(32_767),
+  })
+  .strict();
+
+const pairingDisplaySchema = z
+  .object({
+    code: z.string().regex(/^\d{6}$/),
+    expiresAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
 export const DesktopStateSchema = z
   .object({
     phase: z.enum(["ready", "error"]),
@@ -16,13 +31,8 @@ export const DesktopStateSchema = z
       .optional(),
     hostStatus: z.enum(["stopped", "starting", "running", "stopping", "error"]),
     openAtLogin: z.boolean(),
-    workspace: z
-      .object({
-        id: z.string().uuid(),
-        name: z.string().trim().min(1).max(120),
-      })
-      .strict()
-      .nullable(),
+    workspaces: z.array(workspaceStateSchema).max(100),
+    pairing: pairingDisplaySchema.nullable(),
     notice: z.string().max(500).nullable(),
   })
   .strict();

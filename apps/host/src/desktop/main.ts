@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   protocol,
@@ -34,6 +35,10 @@ import { createHostKeyManager } from "./host-key-manager.js";
 import { createHostRegistry, HostRegistryError } from "./host-registry.js";
 import { loadPublicRuntimeConfig } from "./public-runtime-config.js";
 import { createSupabaseAuthController } from "./supabase-auth-controller.js";
+import { createConfigStore, type HostConfig } from "./config-store.js";
+import { createWorkspaceAuthorizer } from "./workspace-authorizer.js";
+import { createPairingController } from "./pairing-controller.js";
+import { createSupabasePairingRequest } from "./pairing-transport.js";
 
 registerAppScheme(protocol);
 
@@ -95,7 +100,8 @@ if (!hasSingleInstanceLock) {
     authStatus: "signed-out",
     hostStatus: "stopped",
     openAtLogin: false,
-    workspace: null,
+    workspaces: [],
+    pairing: null,
     notice: "此功能尚未启用",
   });
   let ipcController: ReturnType<typeof registerIpcController> | undefined;
@@ -103,6 +109,13 @@ if (!hasSingleInstanceLock) {
   let authController:
     ReturnType<typeof createSupabaseAuthController> | undefined;
   let hostRegistry: ReturnType<typeof createHostRegistry> | undefined;
+  let configStore: ReturnType<typeof createConfigStore> | undefined;
+  let localConfig: HostConfig | null = null;
+  let hostKeyManager: ReturnType<typeof createHostKeyManager> | undefined;
+  let workspaceAuthorizer:
+    ReturnType<typeof createWorkspaceAuthorizer> | undefined;
+  let pairingTransportReady = false;
+  let pairingController: ReturnType<typeof createPairingController> | undefined;
   const unavailableAction = async () => unavailableActionResult;
   const unavailableDataResetHandlers: DataResetDesktopHandlers = {
     beginDataReset: async () => ({ phrase: "此功能尚未启用" }),
@@ -145,6 +158,33 @@ if (!hasSingleInstanceLock) {
         },
         notice: "Host 已连接到账号",
       });
+
+      if (configStore && hostKeyManager) {
+        const keyPair = await hostKeyManager.getOrCreate();
+        localConfig = {
+          schemaVersion: 1,
+          host: {
+            id: host.id,
+            name: host.name,
+            publicKey: JSON.stringify(keyPair.publicKeyJwk),
+            protocolVersion: host.protocolVersion,
+          },
+          workspaces: localConfig?.workspaces ?? [],
+          openAtLogin: localConfig?.openAtLogin ?? false,
+          installedVersion: localConfig?.installedVersion ?? "0.1.0",
+          doctorSummary: localConfig?.doctorSummary ?? null,
+        };
+        await configStore.write(localConfig);
+      }
+
+      pairingTransportReady = false;
+      try {
+        if (!authController) throw new Error("Auth controller is unavailable");
+        const session = await authController.getClient().auth.getSession();
+        pairingTransportReady = !session.error && session.data.session !== null;
+      } catch {
+        pairingTransportReady = false;
+      }
       return { ok: true as const, message: "登录成功" };
     } catch (error) {
       const message =
@@ -192,10 +232,12 @@ if (!hasSingleInstanceLock) {
       try {
         const result = await authController.signOut();
         if (result.ok) {
+          pairingTransportReady = false;
           updateDesktopState({
             ...desktopState,
             ...authStatePatch(),
             host: null,
+            pairing: null,
             notice: result.message,
           });
         }
@@ -204,9 +246,58 @@ if (!hasSingleInstanceLock) {
         return { ok: false, message: "退出登录失败，请稍后重试" };
       }
     },
-    chooseWorkspace: unavailableAction,
-    removeWorkspace: unavailableAction,
-    createPairingCode: unavailableAction,
+    chooseWorkspace: async () => {
+      if (!workspaceAuthorizer) return unavailableActionResult;
+      const selected = await dialog.showOpenDialog({
+        properties: ["openDirectory"],
+      });
+      if (selected.canceled || !selected.filePaths[0]) {
+        return { ok: false, message: "已取消添加项目" };
+      }
+      try {
+        await workspaceAuthorizer.addDirectory(selected.filePaths[0]);
+        updateDesktopState({
+          ...desktopState,
+          workspaces: workspaceAuthorizer.list(),
+          notice: "项目已添加",
+        });
+        return { ok: true, message: "项目已添加" };
+      } catch (error) {
+        return {
+          ok: false,
+          message:
+            error instanceof Error ? error.message : "添加项目失败，请稍后重试",
+        };
+      }
+    },
+    removeWorkspace: async ({ workspaceId }) => {
+      if (!workspaceAuthorizer) return unavailableActionResult;
+      try {
+        await workspaceAuthorizer.removeWorkspace(workspaceId);
+        updateDesktopState({
+          ...desktopState,
+          workspaces: workspaceAuthorizer.list(),
+          notice: "项目已移除",
+        });
+        return { ok: true, message: "项目已移除" };
+      } catch (error) {
+        return {
+          ok: false,
+          message:
+            error instanceof Error ? error.message : "移除项目失败，请稍后重试",
+        };
+      }
+    },
+    createPairingCode: async () => {
+      if (!pairingController) return unavailableActionResult;
+      const result = await pairingController.create();
+      updateDesktopState({
+        ...desktopState,
+        pairing: result.pairing,
+        notice: result.message,
+      });
+      return { ok: result.ok, message: result.message };
+    },
     startHost: unavailableAction,
     stopHost: unavailableAction,
     runDoctor: unavailableAction,
@@ -249,6 +340,33 @@ if (!hasSingleInstanceLock) {
         isPackaged: app.isPackaged,
         resourcePath: path.join(process.resourcesPath, "public-runtime.json"),
       });
+      configStore = createConfigStore({
+        filePath: path.join(app.getPath("userData"), "config.v1.json"),
+      });
+      localConfig = await configStore.read();
+      workspaceAuthorizer = createWorkspaceAuthorizer({
+        initialWorkspaces: localConfig?.workspaces ?? [],
+        save: async (workspaces) => {
+          if (!configStore || !desktopState.host || !hostKeyManager) {
+            throw new Error("Host 尚未登录");
+          }
+          const keyPair = await hostKeyManager.getOrCreate();
+          localConfig = {
+            schemaVersion: 1,
+            host: {
+              id: desktopState.host.id,
+              name: desktopState.host.name,
+              publicKey: JSON.stringify(keyPair.publicKeyJwk),
+              protocolVersion: desktopState.host.protocolVersion,
+            },
+            workspaces,
+            openAtLogin: localConfig?.openAtLogin ?? false,
+            installedVersion: localConfig?.installedVersion ?? app.getVersion(),
+            doctorSummary: localConfig?.doctorSummary ?? null,
+          };
+          await configStore.write(localConfig);
+        },
+      });
       const credentialStore = createCredentialStore({
         filePath: path.join(app.getPath("userData"), "credentials.v1.bin"),
         safeStorage: {
@@ -261,7 +379,7 @@ if (!hasSingleInstanceLock) {
           }),
         },
       });
-      const hostKeyManager = createHostKeyManager({ credentialStore });
+      hostKeyManager = createHostKeyManager({ credentialStore });
       authController = createSupabaseAuthController({
         runtimeConfig,
         credentialStore,
@@ -273,6 +391,21 @@ if (!hasSingleInstanceLock) {
         hostName: "Windows Host",
         version: app.getVersion(),
         protocolVersion: 1,
+      });
+      pairingController = createPairingController({
+        isSignedIn: () => authController?.getSnapshot().signedIn === true,
+        isHostActive: () => desktopState.host !== null,
+        isTransportReady: () => pairingTransportReady,
+        createPairingRequest: async () => {
+          const host = desktopState.host;
+          if (!host || !authController) {
+            throw new Error("Pairing transport is unavailable");
+          }
+          return createSupabasePairingRequest({
+            client: authController.getClient() as never,
+            hostId: host.id,
+          });
+        },
       });
       await authController.restore();
       if (authController.getSnapshot().signedIn) {
@@ -293,6 +426,7 @@ if (!hasSingleInstanceLock) {
     }
     updateDesktopState({
       ...desktopState,
+      workspaces: workspaceAuthorizer?.list() ?? [],
       openAtLogin: loginItemController.isEnabled(),
     });
 

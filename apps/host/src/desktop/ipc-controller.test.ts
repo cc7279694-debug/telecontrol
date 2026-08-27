@@ -50,7 +50,8 @@ const desktopState: DesktopState = {
   authStatus: "signed-out",
   hostStatus: "stopped",
   openAtLogin: false,
-  workspace: null,
+  workspaces: [],
+  pairing: null,
   notice: "此功能尚未启用",
 };
 

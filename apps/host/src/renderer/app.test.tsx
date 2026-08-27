@@ -15,7 +15,8 @@ const stoppedState: DesktopState = {
   authStatus: "signed-out",
   hostStatus: "stopped",
   openAtLogin: false,
-  workspace: null,
+  workspaces: [],
+  pairing: null,
   notice: "此功能尚未启用",
 };
 
@@ -85,5 +86,74 @@ describe("Host renderer", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "完成登录" })).toBeEnabled(),
     );
+  });
+
+  it("shows authorized projects and the pairing code controls for a signed-in Host", async () => {
+    const signedInState: DesktopState = {
+      ...stoppedState,
+      authStatus: "signed-in",
+      host: {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Windows Host",
+        protocolVersion: 1,
+      },
+      workspaces: [
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          name: "演示项目",
+          path: "C:\\Projects\\demo",
+        },
+      ],
+      pairing: null,
+    };
+    const api = {
+      getDesktopState: vi.fn(async () => signedInState),
+      subscribeDesktopState: vi.fn(() => vi.fn()),
+      createPairingCode: vi.fn(async () => ({
+        ok: true,
+        message: "配对码已生成",
+      })),
+    } as unknown as DesktopApi;
+    Object.defineProperty(window, "codexRemoteHost", {
+      configurable: true,
+      value: api,
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("演示项目")).toBeInTheDocument();
+    expect(screen.getByText("C:\\Projects\\demo")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "生成配对码" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders a pairing code and expiry when the Host publishes one", async () => {
+    const pairingState: DesktopState = {
+      ...stoppedState,
+      authStatus: "signed-in",
+      host: {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Windows Host",
+        protocolVersion: 1,
+      },
+      pairing: {
+        code: "123456",
+        expiresAt: "2026-08-27T00:05:00.000Z",
+      },
+    };
+    const api = {
+      getDesktopState: vi.fn(async () => pairingState),
+      subscribeDesktopState: vi.fn(() => vi.fn()),
+    } as unknown as DesktopApi;
+    Object.defineProperty(window, "codexRemoteHost", {
+      configurable: true,
+      value: api,
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("123456")).toBeInTheDocument();
+    expect(screen.getByText(/配对码有效期/)).toBeInTheDocument();
   });
 });

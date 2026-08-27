@@ -119,3 +119,121 @@ body {
 .auth-card button:hover {
   background: #1d4ed8;
 }
+
+.feature-card {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.section-heading h2 {
+  margin: 4px 0 0;
+  font-size: 17px;
+}
+
+.section-heading .eyebrow {
+  text-align: left;
+}
+
+.section-heading button,
+.secondary-button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgba(96, 165, 250, 0.55);
+  border-radius: 9px;
+  color: #eff6ff;
+  background: #1d4ed8;
+  font: inherit;
+  cursor: pointer;
+}
+
+.section-heading button:disabled,
+.secondary-button:disabled,
+.auth-card button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.workspace-list {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workspace-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.8);
+}
+
+.workspace-list li > div {
+  min-width: 0;
+}
+
+.workspace-list strong,
+.workspace-list span {
+  display: block;
+}
+
+.workspace-list span {
+  overflow: hidden;
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.secondary-button {
+  flex: 0 0 auto;
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.35);
+  background: transparent;
+}
+
+.pairing-code {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 12px;
+  text-align: center;
+  background: rgba(37, 99, 235, 0.16);
+}
+
+.pairing-code span {
+  display: block;
+  color: #bfdbfe;
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+.pairing-code p {
+  margin: 8px 0 0;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+@media (max-width: 520px) {
+  .shell {
+    padding: 12px;
+  }
+
+  .panel {
+    padding: 22px 18px;
+  }
+}

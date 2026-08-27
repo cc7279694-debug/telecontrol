@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { DesktopApi, DesktopState } from "../desktop/contract.js";
+import { PairingScreen } from "./pairing-screen.js";
+import { WorkspacesScreen } from "./workspaces-screen.js";
 
 declare global {
   interface Window {
@@ -98,6 +100,47 @@ export function App() {
     }
   }
 
+  async function handleChooseWorkspace() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await window.codexRemoteHost.chooseWorkspace();
+      setMessage(result.message);
+    } catch {
+      setMessage("添加项目失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRemoveWorkspace(workspaceId: string) {
+    if (busy || !window.confirm("确定要移除这个项目授权吗？")) return;
+    setBusy(true);
+    try {
+      const result = await window.codexRemoteHost.removeWorkspace({
+        workspaceId,
+      });
+      setMessage(result.message);
+    } catch {
+      setMessage("移除项目失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCreatePairingCode() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await window.codexRemoteHost.createPairingCode();
+      setMessage(result.message);
+    } catch {
+      setMessage("配对码生成失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="shell">
       <section className="panel">
@@ -161,6 +204,23 @@ export function App() {
                 </button>
               </div>
             )}
+            {desktopState.authStatus === "signed-in" ? (
+              <>
+                <WorkspacesScreen
+                  workspaces={desktopState.workspaces}
+                  disabled={busy}
+                  onChoose={() => void handleChooseWorkspace()}
+                  onRemove={(workspaceId) =>
+                    void handleRemoveWorkspace(workspaceId)
+                  }
+                />
+                <PairingScreen
+                  pairing={desktopState.pairing}
+                  disabled={busy || !desktopState.host}
+                  onCreate={() => void handleCreatePairingCode()}
+                />
+              </>
+            ) : null}
             <p className="detail">
               开机启动：{desktopState.openAtLogin ? "开启" : "关闭"}
             </p>

@@ -16,7 +16,8 @@ const validState = {
   authStatus: "signed-out",
   hostStatus: "stopped",
   openAtLogin: false,
-  workspace: null,
+  workspaces: [],
+  pairing: null,
   notice: "此功能尚未启用",
 } as const;
 
@@ -61,6 +62,31 @@ describe("desktop contract", () => {
       BeginDataResetResultSchema.safeParse({
         phrase: "RESET",
         path: "C:\\Users",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("exposes only local workspace labels and short-lived pairing display data", () => {
+    const state = DesktopStateSchema.parse({
+      ...validState,
+      workspaces: [
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          name: "项目",
+          path: "C:\\Users\\demo\\Projects\\project",
+        },
+      ],
+      pairing: {
+        code: "123456",
+        expiresAt: "2026-08-27T00:05:00.000Z",
+      },
+    });
+    expect(state.workspaces[0]?.path).toContain("C:\\Users");
+    expect(state.pairing?.code).toBe("123456");
+    expect(
+      DesktopStateSchema.safeParse({
+        ...validState,
+        pairing: { code: "secret", expiresAt: "2026-08-27T00:05:00.000Z" },
       }).success,
     ).toBe(false);
   });
