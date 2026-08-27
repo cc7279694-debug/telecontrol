@@ -5,6 +5,7 @@ import { z } from "zod";
 const CredentialPayloadSchema = z
   .object({
     schemaVersion: z.literal(1),
+    ownerId: z.string().trim().min(1).max(200).optional(),
     accessToken: z.string().min(1).max(8_192),
     refreshToken: z.string().min(1).max(8_192),
     hostPrivateKeyJwk: z

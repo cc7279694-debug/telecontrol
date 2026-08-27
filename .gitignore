@@ -10,4 +10,5 @@ playwright-report/
 .worktrees/
 *.log
 *.tsbuildinfo
+apps/host/public-runtime.json
 

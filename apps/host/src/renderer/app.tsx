@@ -23,6 +23,7 @@ export function App() {
   const [token, setToken] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [otpSent, setOtpSent] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -57,20 +58,44 @@ export function App() {
 
   async function handleRequestOtp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const result = await window.codexRemoteHost.requestOtp({ email });
-    setMessage(result.message);
-    if (result.ok) setOtpSent(true);
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await window.codexRemoteHost.requestOtp({ email });
+      setMessage(result.message);
+      if (result.ok) setOtpSent(true);
+    } catch {
+      setMessage("验证码发送失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleVerifyOtp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const result = await window.codexRemoteHost.verifyOtp({ email, token });
-    setMessage(result.message);
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await window.codexRemoteHost.verifyOtp({ email, token });
+      setMessage(result.message);
+    } catch {
+      setMessage("登录失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleSignOut() {
-    const result = await window.codexRemoteHost.signOut();
-    setMessage(result.message);
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await window.codexRemoteHost.signOut();
+      setMessage(result.message);
+    } catch {
+      setMessage("退出登录失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -98,6 +123,7 @@ export function App() {
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
                       placeholder="name@example.com"
+                      disabled={busy}
                       required
                     />
                   </label>
@@ -109,12 +135,15 @@ export function App() {
                         value={token}
                         onChange={(event) => setToken(event.target.value)}
                         placeholder="输入验证码"
+                        maxLength={6}
+                        pattern="[0-9]{6}"
+                        disabled={busy}
                         required
                       />
                     </label>
                   ) : null}
-                  <button type="submit">
-                    {otpSent ? "完成登录" : "发送验证码"}
+                  <button type="submit" disabled={busy}>
+                    {busy ? "处理中…" : otpSent ? "完成登录" : "发送验证码"}
                   </button>
                 </form>
               </div>
@@ -127,8 +156,8 @@ export function App() {
                 <p className="detail">
                   注册状态：{desktopState.host ? "已连接" : "等待连接"}
                 </p>
-                <button type="button" onClick={handleSignOut}>
-                  退出登录
+                <button type="button" onClick={handleSignOut} disabled={busy}>
+                  {busy ? "处理中…" : "退出登录"}
                 </button>
               </div>
             )}

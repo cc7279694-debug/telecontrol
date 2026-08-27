@@ -38,6 +38,7 @@ export type HostRegistryErrorCode =
   | "HOST_MULTIPLE_ACTIVE"
   | "HOST_KEY_MISMATCH"
   | "HOST_PROTOCOL_MISMATCH"
+  | "HOST_REVOKED"
   | "HOST_WRITE_FAILED";
 
 export class HostRegistryError extends Error {
@@ -48,6 +49,7 @@ export class HostRegistryError extends Error {
         HOST_MULTIPLE_ACTIVE: "账号下存在多个活动 Host，请先撤销旧 Host",
         HOST_KEY_MISMATCH: "本机 Host 密钥与云端记录不一致",
         HOST_PROTOCOL_MISMATCH: "Host 协议版本不匹配",
+        HOST_REVOKED: "此 Host 已被撤销，请先清除本机数据后重新配对",
         HOST_WRITE_FAILED: "无法保存 Host 注册状态",
       }[code],
     );
@@ -116,18 +118,21 @@ export function createHostRegistry({
     const keyPair = await hostKeyManager.getOrCreate();
     const query = (client.from("hosts") as Query)
       .select("id,name,public_key,version,protocol_version,revoked_at")
-      .eq("owner_id", ownerId)
-      .is("revoked_at", null);
-    const listed = await query.limit(2);
+      .eq("owner_id", ownerId);
+    const listed = await query.limit(3);
     if (listed.error) {
       throw new HostRegistryError("HOST_QUERY_FAILED");
     }
     const rows = listed.data ?? [];
-    if (rows.length > 1) {
+    const activeRows = rows.filter((row) => !row.revoked_at);
+    if (activeRows.length > 1) {
       throw new HostRegistryError("HOST_MULTIPLE_ACTIVE");
     }
 
-    const existing = rows[0];
+    const existing = activeRows[0];
+    if (!existing && rows.some((row) => row.revoked_at)) {
+      throw new HostRegistryError("HOST_REVOKED");
+    }
     if (existing) {
       if (existing.protocol_version !== protocolVersion) {
         throw new HostRegistryError("HOST_PROTOCOL_MISMATCH");
@@ -140,7 +145,7 @@ export function createHostRegistry({
       ) {
         throw new HostRegistryError("HOST_KEY_MISMATCH");
       }
-      const updated = await query
+      const updated = await (client.from("hosts") as Query)
         .update({ auth_session_id: authSessionId, version })
         .eq("id", existing.id);
       if (updated && "error" in updated && updated.error) {

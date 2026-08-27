@@ -18,7 +18,13 @@ type SupabaseAuthLike = {
   getSession: () => Promise<AuthResponse<{ session: Session | null }>>;
   getUser: () => Promise<AuthResponse<{ user: User | null }>>;
   refreshSession: () => Promise<AuthResponse<{ session: Session | null }>>;
-  signOut: () => Promise<{ error: AuthErrorLike }>;
+  setSession?: (input: {
+    access_token: string;
+    refresh_token: string;
+  }) => Promise<AuthResponse<{ session: Session | null }>>;
+  signOut: (options?: { scope: "global" | "local" | "others" }) => Promise<{
+    error: AuthErrorLike;
+  }>;
   getClaims?: () => Promise<AuthResponse<{ claims?: Record<string, unknown> }>>;
   onAuthStateChange: (
     callback: (event: string, session: Session | null) => void,
@@ -84,19 +90,6 @@ function parseSession(value: string) {
   }
 }
 
-function sessionToStoredValue(session: Session) {
-  return JSON.stringify({
-    access_token: session.access_token,
-    refresh_token: session.refresh_token,
-    expires_in: session.expires_in,
-    expires_at: session.expires_at,
-    token_type: session.token_type,
-    user: session.user,
-    provider_token: session.provider_token,
-    provider_refresh_token: session.provider_refresh_token,
-  });
-}
-
 function tokenClaims(accessToken: string) {
   try {
     const payload = accessToken.split(".")[1];
@@ -144,8 +137,18 @@ export function createSupabaseAuthController({
       const session = parseSession(value);
       if (!session) return;
       const hostKey = await hostKeyManager.getOrCreate();
+      const existing = await credentialStore.read();
+      const sessionOwnerId = tokenClaims(session.access_token).sub;
+      if (
+        existing?.ownerId &&
+        sessionOwnerId &&
+        sessionOwnerId !== existing.ownerId
+      ) {
+        return;
+      }
       const payload: CredentialPayload = {
         schemaVersion: 1,
+        ownerId: existing?.ownerId,
         accessToken: session.access_token,
         refreshToken: session.refresh_token,
         hostPrivateKeyJwk: {
@@ -170,6 +173,7 @@ export function createSupabaseAuthController({
       auth: {
         persistSession: true,
         autoRefreshToken: true,
+        storageKey,
         detectSessionInUrl: false,
         storage,
       },
@@ -218,8 +222,31 @@ export function createSupabaseAuthController({
   });
 
   async function persistSession(session: Session) {
-    await storage.setItem(storageKey, sessionToStoredValue(session));
+    const identity = await getIdentity(session);
+    const existing = await credentialStore.read();
+    if (existing?.ownerId && existing.ownerId !== identity.ownerId) {
+      await client.auth.signOut({ scope: "local" }).catch(() => undefined);
+      await credentialStore.write(existing);
+      snapshot = emptySnapshot();
+      return false;
+    }
+    const hostKey = await hostKeyManager.getOrCreate();
+    await credentialStore.write({
+      schemaVersion: 1,
+      ownerId: identity.ownerId ?? undefined,
+      accessToken: session.access_token,
+      refreshToken: session.refresh_token,
+      hostPrivateKeyJwk: {
+        kty: "EC",
+        crv: "P-256",
+        x: hostKey.privateKeyJwk.x,
+        y: hostKey.privateKeyJwk.y,
+        d: hostKey.privateKeyJwk.d,
+      },
+      updatedAt: new Date().toISOString(),
+    });
     await applySession(session);
+    return true;
   }
 
   async function requestOtp(email: string): Promise<AuthActionResult> {
@@ -247,11 +274,40 @@ export function createSupabaseAuthController({
       };
     if (!result.data.session)
       return { ok: false, message: "登录失败，未获取到登录状态" };
-    await persistSession(result.data.session);
+    if (!(await persistSession(result.data.session))) {
+      return {
+        ok: false,
+        message: "检测到其他账号的本机凭据，请先清除本机数据后重试",
+      };
+    }
     return { ok: true, message: "登录成功" };
   }
 
   async function restore(): Promise<AuthActionResult> {
+    const credentials = await credentialStore.read();
+    if (credentials && client.auth.setSession) {
+      const restored = await client.auth.setSession({
+        access_token: credentials.accessToken,
+        refresh_token: credentials.refreshToken,
+      });
+      if (restored.error || !restored.data.session) {
+        await credentialStore.remove();
+        snapshot = emptySnapshot();
+        return { ok: false, message: "登录状态已失效，请重新登录" };
+      }
+      const restoredIdentity = await getIdentity(restored.data.session);
+      if (
+        credentials.ownerId &&
+        credentials.ownerId !== restoredIdentity.ownerId
+      ) {
+        await client.auth.signOut({ scope: "local" }).catch(() => undefined);
+        await credentialStore.remove();
+        snapshot = emptySnapshot();
+        return { ok: false, message: "登录状态已失效，请重新登录" };
+      }
+      await applySession(restored.data.session);
+      return { ok: true, message: "已恢复登录状态" };
+    }
     const result = await client.auth.getSession();
     if (result.error) return { ok: false, message: "无法恢复登录状态" };
     if (!result.data.session) {
@@ -266,7 +322,12 @@ export function createSupabaseAuthController({
     const result = await client.auth.refreshSession();
     if (result.error || !result.data.session)
       return { ok: false, message: "登录状态已失效，请重新登录" };
-    await persistSession(result.data.session);
+    if (!(await persistSession(result.data.session))) {
+      return {
+        ok: false,
+        message: "检测到其他账号的本机凭据，请先清除本机数据后重试",
+      };
+    }
     return { ok: true, message: "登录状态已更新" };
   }
 

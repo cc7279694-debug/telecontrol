@@ -50,6 +50,27 @@ describe("public runtime config", () => {
     ).toContain("eyJ");
   });
 
+  it("loads the generated public resource in packaged mode", () => {
+    expect(
+      loadPublicRuntimeConfig({
+        isPackaged: true,
+        resourcePath: "public-runtime.json",
+        readResource: () =>
+          JSON.stringify({
+            supabaseUrl: "https://demo.supabase.co",
+            publishableKey: "sb_publishable_demo",
+            webOrigin: "https://remote.example.com",
+            protocolVersion: 1,
+          }),
+      }),
+    ).toMatchObject({
+      supabaseUrl: "https://demo.supabase.co",
+      publishableKey: "sb_publishable_demo",
+      webOrigin: "https://remote.example.com",
+      protocolVersion: 1,
+    });
+  });
+
   it.each([
     "CODEX_REMOTE_SUPABASE_SERVICE_ROLE",
     "CODEX_REMOTE_DATABASE_URL",

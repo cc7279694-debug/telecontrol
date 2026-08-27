@@ -244,7 +244,11 @@ if (!hasSingleInstanceLock) {
       createDataResetController({ userDataDir: app.getPath("userData") }),
     );
     try {
-      const runtimeConfig = loadPublicRuntimeConfig({ source: process.env });
+      const runtimeConfig = loadPublicRuntimeConfig({
+        source: process.env,
+        isPackaged: app.isPackaged,
+        resourcePath: path.join(process.resourcesPath, "public-runtime.json"),
+      });
       const credentialStore = createCredentialStore({
         filePath: path.join(app.getPath("userData"), "credentials.v1.bin"),
         safeStorage: {

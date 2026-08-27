@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Session, User } from "@supabase/supabase-js";
+import type { CredentialPayload } from "./credential-store.js";
 import { createSupabaseAuthController } from "./supabase-auth-controller.js";
 
 const user = { id: "user-1", email: "demo@example.com" } as User;
@@ -32,6 +33,10 @@ function createFixture() {
       data: { session: storedSession },
       error: null,
     })),
+    setSession: vi.fn(async () => {
+      storedSession = session;
+      return { data: { session }, error: null };
+    }),
     signOut: vi.fn(async () => ({ error: null })),
     getClaims: vi.fn(async () => ({
       data: { claims: { sub: user.id, session_id: "session-1" } },
@@ -42,7 +47,7 @@ function createFixture() {
     })),
   };
   const credentialStore = {
-    read: vi.fn(async () => null),
+    read: vi.fn(async (): Promise<CredentialPayload | null> => null),
     write: vi.fn(async () => undefined),
     remove: vi.fn(async () => undefined),
   };
@@ -101,6 +106,7 @@ describe("supabase auth controller", () => {
     expect(fixture.getClientOptions()).toMatchObject({
       auth: {
         persistSession: true,
+        storageKey: "codex-remote.host.session",
         detectSessionInUrl: false,
         storage: expect.any(Object),
       },
@@ -111,6 +117,87 @@ describe("supabase auth controller", () => {
       maskedEmail: "d***@example.com",
       ownerId: "user-1",
       authSessionId: "session-1",
+    });
+  });
+
+  it("rejects replacing credentials with a different account", async () => {
+    const fixture = createFixture();
+    const oldCredentials: CredentialPayload = {
+      schemaVersion: 1,
+      ownerId: "another-owner",
+      accessToken: "old-access-token",
+      refreshToken: "old-refresh-token",
+      hostPrivateKeyJwk: {
+        kty: "EC",
+        crv: "P-256",
+        x: "public-x",
+        y: "public-y",
+        d: "private-d",
+      },
+      updatedAt: "2026-08-27T00:00:00.000Z",
+    };
+    fixture.credentialStore.read.mockResolvedValue(oldCredentials);
+
+    await expect(
+      fixture.controller.verifyOtp("demo@example.com", "123456"),
+    ).resolves.toEqual({
+      ok: false,
+      message: "检测到其他账号的本机凭据，请先清除本机数据后重试",
+    });
+    expect(fixture.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(fixture.credentialStore.write).toHaveBeenCalledWith(oldCredentials);
+  });
+
+  it("clears a revoked session instead of restoring it", async () => {
+    const fixture = createFixture();
+    fixture.credentialStore.read.mockResolvedValue({
+      schemaVersion: 1,
+      accessToken: "revoked-access-token",
+      refreshToken: "revoked-refresh-token",
+      hostPrivateKeyJwk: {
+        kty: "EC",
+        crv: "P-256",
+        x: "public-x",
+        y: "public-y",
+        d: "private-d",
+      },
+      updatedAt: "2026-08-27T00:00:00.000Z",
+    });
+    fixture.auth.setSession.mockResolvedValueOnce({
+      data: { session: null },
+      error: new Error("revoked") as never,
+    });
+
+    await expect(fixture.controller.restore()).resolves.toEqual({
+      ok: false,
+      message: "登录状态已失效，请重新登录",
+    });
+    expect(fixture.credentialStore.remove).toHaveBeenCalledOnce();
+  });
+
+  it("restores DPAPI tokens through Supabase setSession", async () => {
+    const fixture = createFixture();
+    fixture.credentialStore.read.mockResolvedValue({
+      schemaVersion: 1,
+      accessToken: "stored-access-token",
+      refreshToken: "stored-refresh-token",
+      hostPrivateKeyJwk: {
+        kty: "EC",
+        crv: "P-256",
+        x: "public-x",
+        y: "public-y",
+        d: "private-d",
+      },
+      updatedAt: "2026-08-27T00:00:00.000Z",
+    });
+
+    await expect(fixture.controller.restore()).resolves.toEqual({
+      ok: true,
+      message: "已恢复登录状态",
+    });
+    expect(fixture.auth.setSession).toHaveBeenCalledWith({
+      access_token: "stored-access-token",
+      refresh_token: "stored-refresh-token",
     });
   });
 

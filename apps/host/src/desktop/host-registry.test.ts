@@ -9,16 +9,18 @@ const publicKey = {
 };
 
 function createFixture(rows: unknown[]) {
-  const query = {
+  const listQuery = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     is: vi.fn().mockReturnThis(),
-    limit: vi.fn().mockReturnThis(),
+    limit: vi.fn(async () => ({ data: rows, error: null })),
+  };
+  const query = {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
     update: vi.fn().mockReturnThis(),
     insert: vi.fn().mockReturnThis(),
-    then: undefined,
-  } as Record<string, ReturnType<typeof vi.fn> | undefined>;
-  query.limit = vi.fn(async () => ({ data: rows, error: null }));
+  } as Record<string, ReturnType<typeof vi.fn>>;
   query.single = vi.fn(async () => ({
     data: {
       id: "host-new",
@@ -29,7 +31,16 @@ function createFixture(rows: unknown[]) {
     },
     error: null,
   }));
-  return { client: { from: vi.fn(() => query) }, query };
+  let fromCall = 0;
+  return {
+    client: {
+      from: vi.fn(() => {
+        fromCall += 1;
+        return fromCall === 1 ? listQuery : query;
+      }),
+    },
+    query,
+  };
 }
 
 function createRegistry(rows: unknown[]) {
@@ -88,6 +99,48 @@ describe("host registry", () => {
     ).rejects.toMatchObject({
       code: "HOST_KEY_MISMATCH",
     } satisfies Partial<HostRegistryError>);
+  });
+
+  it("updates an existing matching Host with a new update query", async () => {
+    const { fixture, registry } = createRegistry([
+      {
+        id: "host-existing",
+        name: "Windows Host",
+        public_key: JSON.stringify(publicKey),
+        protocol_version: 1,
+        revoked_at: null,
+      },
+    ]);
+
+    await expect(
+      registry.ensureRegistered({
+        ownerId: "owner-1",
+        authSessionId: "session-2",
+      }),
+    ).resolves.toMatchObject({ id: "host-existing" });
+    expect(fixture.query.update).toHaveBeenCalledWith({
+      auth_session_id: "session-2",
+      version: "0.1.0",
+    });
+  });
+
+  it("does not silently recreate a revoked Host", async () => {
+    const { registry } = createRegistry([
+      {
+        id: "host-revoked",
+        name: "Windows Host",
+        public_key: JSON.stringify(publicKey),
+        protocol_version: 1,
+        revoked_at: "2026-08-27T00:00:00.000Z",
+      },
+    ]);
+
+    await expect(
+      registry.ensureRegistered({
+        ownerId: "owner-1",
+        authSessionId: "session-1",
+      }),
+    ).rejects.toMatchObject({ code: "HOST_REVOKED" });
   });
 
   it("rejects protocol mismatch and multiple active Hosts", async () => {

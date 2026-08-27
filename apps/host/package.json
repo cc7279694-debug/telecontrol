@@ -9,7 +9,8 @@
     "build": "npm run build --workspace @codex-remote/protocol && tsc -p tsconfig.build.json && tsc -p tsconfig.desktop.build.json && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.desktop.json --noEmit && tsc -p tsconfig.renderer.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test:e2e": "playwright test",
-    "package:win": "npm run build && electron-builder --win --x64"
+    "generate-public-runtime": "tsx scripts/generate-public-runtime.ts",
+    "package:win": "npm run build && npm run generate-public-runtime && electron-builder --win --x64"
   },
   "dependencies": {
     "@openai/codex": "0.149.0",
@@ -43,6 +44,12 @@
     "files": [
       "dist/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "public-runtime.json",
+        "to": "public-runtime.json"
+      }
     ]
   }
 }

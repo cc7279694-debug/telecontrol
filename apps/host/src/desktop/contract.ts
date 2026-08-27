@@ -49,7 +49,10 @@ export const requestOtpInputSchema = z
 export const verifyOtpInputSchema = z
   .object({
     email: z.string().trim().email().max(254),
-    token: z.string().trim().min(1).max(128),
+    token: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/, "验证码必须是六位数字"),
   })
   .strict();
 

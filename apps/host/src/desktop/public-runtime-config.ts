@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 export type PublicRuntimeConfig = {
   supabaseUrl: string;
   publishableKey: string;
@@ -13,6 +15,12 @@ export class PublicRuntimeConfigError extends Error {
 }
 
 type RuntimeSource = Record<string, string | undefined>;
+type PublicRuntimeResource = {
+  supabaseUrl?: unknown;
+  publishableKey?: unknown;
+  webOrigin?: unknown;
+  protocolVersion?: unknown;
+};
 
 const privateFieldPattern =
   /(service[_-]?role|secret|database|vapid[_-]?private)/i;
@@ -57,9 +65,45 @@ function parsePublicUrl(value: string, fieldName: string) {
 
 export function loadPublicRuntimeConfig({
   source = process.env,
+  isPackaged = false,
+  resourcePath,
+  readResource = (filePath) => readFileSync(filePath, "utf8"),
 }: {
   source?: RuntimeSource;
+  isPackaged?: boolean;
+  resourcePath?: string;
+  readResource?: (filePath: string) => string;
 } = {}): PublicRuntimeConfig {
+  if (isPackaged) {
+    if (!resourcePath) {
+      throw new PublicRuntimeConfigError("缺少安装包公共配置文件");
+    }
+    let resource: PublicRuntimeResource;
+    try {
+      resource = JSON.parse(
+        readResource(resourcePath),
+      ) as PublicRuntimeResource;
+    } catch {
+      throw new PublicRuntimeConfigError("安装包公共配置文件无效");
+    }
+    source = {
+      CODEX_REMOTE_SUPABASE_URL:
+        typeof resource.supabaseUrl === "string"
+          ? resource.supabaseUrl
+          : undefined,
+      CODEX_REMOTE_SUPABASE_PUBLISHABLE_KEY:
+        typeof resource.publishableKey === "string"
+          ? resource.publishableKey
+          : undefined,
+      CODEX_REMOTE_WEB_ORIGIN:
+        typeof resource.webOrigin === "string" ? resource.webOrigin : undefined,
+      CODEX_REMOTE_PROTOCOL_VERSION:
+        typeof resource.protocolVersion === "number"
+          ? String(resource.protocolVersion)
+          : undefined,
+    };
+  }
+
   for (const [name, value] of Object.entries(source)) {
     if (
       value &&
