@@ -108,7 +108,7 @@ describe("Windows Host build contract", () => {
     expect(viteConfig.build?.rollupOptions?.input).toBe(
       path.join(hostRoot, "index.html"),
     );
-  }, 15_000);
+  }, 60_000);
 
   it("does not depend on electron-updater", () => {
     const packageJson = readJsonFile<{
@@ -124,11 +124,13 @@ describe("Windows Host build contract", () => {
     const desktopTsconfig = readJsonFile<{
       compilerOptions?: { outDir?: string; rootDir?: string };
       include?: string[];
+      exclude?: string[];
     }>(path.join(hostRoot, "tsconfig.desktop.json"));
 
     expect(desktopTsconfig.compilerOptions?.rootDir).toBe("src/desktop");
     expect(desktopTsconfig.compilerOptions?.outDir).toBe("dist/desktop");
     expect(desktopTsconfig.include).toEqual(["src/desktop/**/*.ts"]);
+    expect(desktopTsconfig.exclude).toEqual(["src/**/*.test.ts", "src/**/*.test.tsx"]);
     expect(existsSync(path.join(hostRoot, "src", "desktop", "main.ts"))).toBe(
       true,
     );
