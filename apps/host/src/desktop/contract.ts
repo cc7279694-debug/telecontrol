@@ -4,6 +4,16 @@ export const DesktopStateSchema = z
   .object({
     phase: z.enum(["ready", "error"]),
     authStatus: z.enum(["signed-out", "signed-in"]),
+    maskedEmail: z.string().max(254).nullable().optional(),
+    host: z
+      .object({
+        id: z.string().uuid(),
+        name: z.string().trim().min(1).max(120),
+        protocolVersion: z.number().int().positive(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
     hostStatus: z.enum(["stopped", "starting", "running", "stopping", "error"]),
     openAtLogin: z.boolean(),
     workspace: z

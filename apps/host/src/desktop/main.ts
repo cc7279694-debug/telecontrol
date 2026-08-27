@@ -6,6 +6,7 @@ import {
   ipcMain,
   Menu,
   protocol,
+  safeStorage,
   Tray,
   type NativeImage,
   type MenuItemConstructorOptions,
@@ -28,6 +29,11 @@ import { createDataResetController } from "./data-reset.js";
 import { createLoginItemController } from "./login-item.js";
 import { createTrayController, type TrayMenuItem } from "./tray-controller.js";
 import { createWindowManager, type ManagedWindow } from "./window-manager.js";
+import { createCredentialStore } from "./credential-store.js";
+import { createHostKeyManager } from "./host-key-manager.js";
+import { createHostRegistry, HostRegistryError } from "./host-registry.js";
+import { loadPublicRuntimeConfig } from "./public-runtime-config.js";
+import { createSupabaseAuthController } from "./supabase-auth-controller.js";
 
 registerAppScheme(protocol);
 
@@ -94,12 +100,66 @@ if (!hasSingleInstanceLock) {
   });
   let ipcController: ReturnType<typeof registerIpcController> | undefined;
   let trayController: ReturnType<typeof createTrayController> | undefined;
+  let authController:
+    ReturnType<typeof createSupabaseAuthController> | undefined;
+  let hostRegistry: ReturnType<typeof createHostRegistry> | undefined;
   const unavailableAction = async () => unavailableActionResult;
   const unavailableDataResetHandlers: DataResetDesktopHandlers = {
     beginDataReset: async () => ({ phrase: "此功能尚未启用" }),
     confirmDataReset: unavailableAction,
   };
   let dataResetHandlers = unavailableDataResetHandlers;
+
+  function authStatePatch() {
+    const snapshot = authController?.getSnapshot();
+    return {
+      authStatus: snapshot?.signedIn
+        ? ("signed-in" as const)
+        : ("signed-out" as const),
+      maskedEmail: snapshot?.maskedEmail ?? null,
+    };
+  }
+
+  async function registerCurrentHost() {
+    const snapshot = authController?.getSnapshot();
+    if (
+      !snapshot?.signedIn ||
+      !snapshot.ownerId ||
+      !snapshot.authSessionId ||
+      !hostRegistry
+    ) {
+      return { ok: false as const, message: "登录状态不完整，请重新登录" };
+    }
+    try {
+      const host = await hostRegistry.ensureRegistered({
+        ownerId: snapshot.ownerId,
+        authSessionId: snapshot.authSessionId,
+      });
+      updateDesktopState({
+        ...desktopState,
+        ...authStatePatch(),
+        host: {
+          id: host.id,
+          name: host.name,
+          protocolVersion: host.protocolVersion,
+        },
+        notice: "Host 已连接到账号",
+      });
+      return { ok: true as const, message: "登录成功" };
+    } catch (error) {
+      const message =
+        error instanceof HostRegistryError
+          ? error.message
+          : "无法登记 Host，请稍后重试";
+      updateDesktopState({
+        ...desktopState,
+        ...authStatePatch(),
+        host: null,
+        notice: message,
+      });
+      return { ok: false as const, message };
+    }
+  }
 
   function updateDesktopState(nextState: DesktopState) {
     desktopState = DesktopStateSchema.parse(nextState);
@@ -109,9 +169,41 @@ if (!hasSingleInstanceLock) {
 
   const handlers: DesktopIpcHandlers = {
     getDesktopState: async () => desktopState,
-    requestOtp: unavailableAction,
-    verifyOtp: unavailableAction,
-    signOut: unavailableAction,
+    requestOtp: async ({ email }) => {
+      if (!authController) return unavailableActionResult;
+      try {
+        return await authController.requestOtp(email);
+      } catch {
+        return { ok: false, message: "验证码发送失败，请稍后重试" };
+      }
+    },
+    verifyOtp: async ({ email, token }) => {
+      if (!authController) return unavailableActionResult;
+      try {
+        const result = await authController.verifyOtp(email, token);
+        if (!result.ok) return result;
+        return await registerCurrentHost();
+      } catch {
+        return { ok: false, message: "登录失败，请稍后重试" };
+      }
+    },
+    signOut: async () => {
+      if (!authController) return unavailableActionResult;
+      try {
+        const result = await authController.signOut();
+        if (result.ok) {
+          updateDesktopState({
+            ...desktopState,
+            ...authStatePatch(),
+            host: null,
+            notice: result.message,
+          });
+        }
+        return result;
+      } catch {
+        return { ok: false, message: "退出登录失败，请稍后重试" };
+      }
+    },
     chooseWorkspace: unavailableAction,
     removeWorkspace: unavailableAction,
     createPairingCode: unavailableAction,
@@ -151,6 +243,50 @@ if (!hasSingleInstanceLock) {
     dataResetHandlers = createDataResetHandlers(
       createDataResetController({ userDataDir: app.getPath("userData") }),
     );
+    try {
+      const runtimeConfig = loadPublicRuntimeConfig({ source: process.env });
+      const credentialStore = createCredentialStore({
+        filePath: path.join(app.getPath("userData"), "credentials.v1.bin"),
+        safeStorage: {
+          isAsyncEncryptionAvailable: async () =>
+            safeStorage.isEncryptionAvailable(),
+          encryptStringAsync: async (value) => safeStorage.encryptString(value),
+          decryptStringAsync: async (value) => ({
+            result: safeStorage.decryptString(value),
+            shouldReEncrypt: false,
+          }),
+        },
+      });
+      const hostKeyManager = createHostKeyManager({ credentialStore });
+      authController = createSupabaseAuthController({
+        runtimeConfig,
+        credentialStore,
+        hostKeyManager,
+      });
+      hostRegistry = createHostRegistry({
+        client: authController.getClient() as never,
+        hostKeyManager,
+        hostName: "Windows Host",
+        version: app.getVersion(),
+        protocolVersion: 1,
+      });
+      await authController.restore();
+      if (authController.getSnapshot().signedIn) {
+        await registerCurrentHost();
+      } else {
+        updateDesktopState({
+          ...desktopState,
+          ...authStatePatch(),
+          host: null,
+          notice: "请输入邮箱登录 Host",
+        });
+      }
+    } catch {
+      updateDesktopState({
+        ...desktopState,
+        notice: "尚未配置 Supabase 公共参数，请联系项目管理员",
+      });
+    }
     updateDesktopState({
       ...desktopState,
       openAtLogin: loginItemController.isEnabled(),
