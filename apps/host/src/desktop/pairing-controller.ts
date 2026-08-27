@@ -1,7 +1,12 @@
-type PairingRequest = {
+export type PairingRequest = {
   pairingId: string;
   code: string;
   expiresAt: string;
+};
+
+export type PairingTransport = {
+  isReady: () => boolean;
+  createPairingRequest: () => Promise<PairingRequest>;
 };
 
 export type PairingDisplay = {
@@ -27,16 +32,14 @@ export class PairingControllerError extends Error {
 type PairingControllerOptions = {
   isSignedIn: () => boolean;
   isHostActive: () => boolean;
-  isTransportReady: () => boolean;
-  createPairingRequest: () => Promise<PairingRequest>;
+  transport: PairingTransport;
   now?: () => number;
 };
 
 export function createPairingController({
   isSignedIn,
   isHostActive,
-  isTransportReady,
-  createPairingRequest,
+  transport,
   now = Date.now,
 }: PairingControllerOptions) {
   let pairing: PairingDisplay | null = null;
@@ -59,13 +62,13 @@ export function createPairingController({
     if (!isHostActive()) {
       return { ok: false, message: "Host 当前不可用", pairing: null };
     }
-    if (!isTransportReady()) {
+    if (!transport.isReady()) {
       return { ok: false, message: "安全连接尚未就绪", pairing: null };
     }
 
     pending = true;
     try {
-      const request = await createPairingRequest();
+      const request = await transport.createPairingRequest();
       pairing = { code: request.code, expiresAt: request.expiresAt };
       return { ok: true, message: "配对码已生成", pairing: getSnapshot() };
     } catch {

@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSupabasePairingRequest } from "./pairing-transport.js";
+import {
+  createSupabasePairingRequest,
+  createSupabasePairingTransport,
+} from "./pairing-transport.js";
 
 describe("Supabase pairing transport", () => {
   it("sends only the hashed code and returns the short-lived display data", async () => {
@@ -23,5 +26,19 @@ describe("Supabase pairing transport", () => {
     const args = rpc.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(args.p_code_hash).not.toBe(result.code);
     expect(String(args.p_code_hash)).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("reports readiness from the pairing transport instead of login state alone", () => {
+    let ready = false;
+    const transport = createSupabasePairingTransport({
+      client: { rpc: vi.fn() },
+      getHostId: () => "11111111-1111-4111-8111-111111111111",
+      isSessionReady: () => ready,
+    });
+
+    expect(transport.isReady()).toBe(false);
+    ready = true;
+    expect(transport.isReady()).toBe(true);
+    expect(transport.createPairingRequest).toBeTypeOf("function");
   });
 });

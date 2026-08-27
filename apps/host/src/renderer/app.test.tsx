@@ -126,6 +126,7 @@ describe("Host renderer", () => {
     expect(
       screen.getByRole("button", { name: "生成配对码" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("电脑 ID")).toBeInTheDocument();
   });
 
   it("renders a pairing code and expiry when the Host publishes one", async () => {
@@ -139,7 +140,7 @@ describe("Host renderer", () => {
       },
       pairing: {
         code: "123456",
-        expiresAt: "2026-08-27T00:05:00.000Z",
+        expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
       },
     };
     const api = {
@@ -154,6 +155,6 @@ describe("Host renderer", () => {
     render(<App />);
 
     expect(await screen.findByText("123456")).toBeInTheDocument();
-    expect(screen.getByText(/配对码有效期/)).toBeInTheDocument();
+    expect(screen.getByText(/有效期至/)).toBeInTheDocument();
   });
 });

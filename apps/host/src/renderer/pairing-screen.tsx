@@ -1,10 +1,16 @@
+import React, { useEffect, useState } from "react";
 import type { DesktopState } from "../desktop/contract.js";
 
 type PairingScreenProps = {
+  host: DesktopState["host"];
   pairing: DesktopState["pairing"];
   disabled: boolean;
   onCreate: () => void;
 };
+
+function remainingSeconds(expiresAt: string) {
+  return Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 1000));
+}
 
 function expiryLabel(expiresAt: string) {
   return new Date(expiresAt).toLocaleTimeString([], {
@@ -14,10 +20,28 @@ function expiryLabel(expiresAt: string) {
 }
 
 export function PairingScreen({
+  host,
   pairing,
   disabled,
   onCreate,
 }: PairingScreenProps) {
+  const [remaining, setRemaining] = useState(() =>
+    pairing ? remainingSeconds(pairing.expiresAt) : 0,
+  );
+
+  useEffect(() => {
+    if (!pairing) {
+      setRemaining(0);
+      return;
+    }
+    const update = () => setRemaining(remainingSeconds(pairing.expiresAt));
+    update();
+    const timer = window.setInterval(update, 1_000);
+    return () => window.clearInterval(timer);
+  }, [pairing]);
+
+  const isExpired = pairing !== null && remaining === 0;
+
   return (
     <section
       className="feature-card pairing-card"
@@ -32,11 +56,26 @@ export function PairingScreen({
           {pairing ? "重新生成" : "生成配对码"}
         </button>
       </div>
-      {pairing ? (
+      {host ? (
+        <div className="host-id" aria-label="电脑 ID">
+          <span>电脑 ID</span>
+          <code>{host.id}</code>
+        </div>
+      ) : null}
+      {pairing && !isExpired ? (
         <div className="pairing-code" aria-label="当前配对码">
           <span>{pairing.code}</span>
-          <p>配对码有效期至 {expiryLabel(pairing.expiresAt)}</p>
+          <p>
+            剩余{" "}
+            {Math.floor(remaining / 60)
+              .toString()
+              .padStart(2, "0")}
+            :{(remaining % 60).toString().padStart(2, "0")} · 有效期至{" "}
+            {expiryLabel(pairing.expiresAt)}
+          </p>
         </div>
+      ) : isExpired ? (
+        <p className="detail">配对码已过期，请重新生成</p>
       ) : (
         <p className="detail">
           在安卓手机打开 Codex Remote，输入这里显示的一次性配对码。

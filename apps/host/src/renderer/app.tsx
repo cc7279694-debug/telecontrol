@@ -215,6 +215,7 @@ export function App() {
                   }
                 />
                 <PairingScreen
+                  host={desktopState.host ?? null}
                   pairing={desktopState.pairing}
                   disabled={busy || !desktopState.host}
                   onCreate={() => void handleCreatePairingCode()}

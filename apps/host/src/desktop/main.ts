@@ -38,7 +38,7 @@ import { createSupabaseAuthController } from "./supabase-auth-controller.js";
 import { createConfigStore, type HostConfig } from "./config-store.js";
 import { createWorkspaceAuthorizer } from "./workspace-authorizer.js";
 import { createPairingController } from "./pairing-controller.js";
-import { createSupabasePairingRequest } from "./pairing-transport.js";
+import { createSupabasePairingTransport } from "./pairing-transport.js";
 
 registerAppScheme(protocol);
 
@@ -114,7 +114,9 @@ if (!hasSingleInstanceLock) {
   let hostKeyManager: ReturnType<typeof createHostKeyManager> | undefined;
   let workspaceAuthorizer:
     ReturnType<typeof createWorkspaceAuthorizer> | undefined;
-  let pairingTransportReady = false;
+  let pairingTransport:
+    ReturnType<typeof createSupabasePairingTransport> | undefined;
+  const activeTurnWorkspaceIds = new Set<string>();
   let pairingController: ReturnType<typeof createPairingController> | undefined;
   const unavailableAction = async () => unavailableActionResult;
   const unavailableDataResetHandlers: DataResetDesktopHandlers = {
@@ -134,8 +136,10 @@ if (!hasSingleInstanceLock) {
   }
 
   async function registerCurrentHost() {
-    const snapshot = authController?.getSnapshot();
+    const controller = authController;
+    const snapshot = controller?.getSnapshot();
     if (
+      !controller ||
       !snapshot?.signedIn ||
       !snapshot.ownerId ||
       !snapshot.authSessionId ||
@@ -177,14 +181,14 @@ if (!hasSingleInstanceLock) {
         await configStore.write(localConfig);
       }
 
-      pairingTransportReady = false;
-      try {
-        if (!authController) throw new Error("Auth controller is unavailable");
-        const session = await authController.getClient().auth.getSession();
-        pairingTransportReady = !session.error && session.data.session !== null;
-      } catch {
-        pairingTransportReady = false;
-      }
+      pairingTransport = createSupabasePairingTransport({
+        client: controller.getClient() as never,
+        getHostId: () => desktopState.host?.id ?? null,
+        isSessionReady: () => {
+          const current = authController?.getSnapshot();
+          return current?.signedIn === true && current.authSessionId !== null;
+        },
+      });
       return { ok: true as const, message: "登录成功" };
     } catch (error) {
       const message =
@@ -232,7 +236,7 @@ if (!hasSingleInstanceLock) {
       try {
         const result = await authController.signOut();
         if (result.ok) {
-          pairingTransportReady = false;
+          pairingTransport = undefined;
           updateDesktopState({
             ...desktopState,
             ...authStatePatch(),
@@ -273,7 +277,9 @@ if (!hasSingleInstanceLock) {
     removeWorkspace: async ({ workspaceId }) => {
       if (!workspaceAuthorizer) return unavailableActionResult;
       try {
-        await workspaceAuthorizer.removeWorkspace(workspaceId);
+        await workspaceAuthorizer.removeWorkspace(workspaceId, () =>
+          activeTurnWorkspaceIds.has(workspaceId),
+        );
         updateDesktopState({
           ...desktopState,
           workspaces: workspaceAuthorizer.list(),
@@ -366,6 +372,8 @@ if (!hasSingleInstanceLock) {
           };
           await configStore.write(localConfig);
         },
+        isWorkspaceInUse: (workspaceId) =>
+          activeTurnWorkspaceIds.has(workspaceId),
       });
       const credentialStore = createCredentialStore({
         filePath: path.join(app.getPath("userData"), "credentials.v1.bin"),
@@ -394,17 +402,16 @@ if (!hasSingleInstanceLock) {
       });
       pairingController = createPairingController({
         isSignedIn: () => authController?.getSnapshot().signedIn === true,
-        isHostActive: () => desktopState.host !== null,
-        isTransportReady: () => pairingTransportReady,
-        createPairingRequest: async () => {
-          const host = desktopState.host;
-          if (!host || !authController) {
-            throw new Error("Pairing transport is unavailable");
-          }
-          return createSupabasePairingRequest({
-            client: authController.getClient() as never,
-            hostId: host.id,
-          });
+        isHostActive: () =>
+          desktopState.host !== undefined && desktopState.host !== null,
+        transport: {
+          isReady: () => pairingTransport?.isReady() === true,
+          createPairingRequest: async () => {
+            if (!pairingTransport) {
+              throw new Error("Pairing transport is unavailable");
+            }
+            return pairingTransport.createPairingRequest();
+          },
         },
       });
       await authController.restore();

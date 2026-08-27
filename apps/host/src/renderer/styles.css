@@ -214,6 +214,26 @@ body {
   background: rgba(37, 99, 235, 0.16);
 }
 
+.host-id {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.8);
+}
+
+.host-id span {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.host-id code {
+  overflow-wrap: anywhere;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
 .pairing-code span {
   display: block;
   color: #bfdbfe;

@@ -1,5 +1,6 @@
 import { randomInt } from "node:crypto";
 import { hashPairingCode } from "@codex-remote/protocol";
+import type { PairingTransport } from "./pairing-controller.js";
 
 type PairingRpcClient = {
   rpc: <T = unknown>(
@@ -7,6 +8,27 @@ type PairingRpcClient = {
     args: Record<string, unknown>,
   ) => Promise<{ data: T | null; error: { message?: string } | null }>;
 };
+
+export function createSupabasePairingTransport({
+  client,
+  getHostId,
+  isSessionReady,
+}: {
+  client: PairingRpcClient;
+  getHostId: () => string | null;
+  isSessionReady: () => boolean;
+}): PairingTransport {
+  return {
+    isReady: () => isSessionReady() && getHostId() !== null,
+    createPairingRequest: async () => {
+      const hostId = getHostId();
+      if (!hostId || !isSessionReady()) {
+        throw new Error("Pairing transport is unavailable");
+      }
+      return createSupabasePairingRequest({ client, hostId });
+    },
+  };
+}
 
 export async function createSupabasePairingRequest({
   client,

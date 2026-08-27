@@ -11,11 +11,14 @@ function createFixture() {
     code: "123456",
     expiresAt: new Date(now + 5 * 60_000).toISOString(),
   }));
+  const transport = {
+    isReady: () => true,
+    createPairingRequest,
+  };
   const controller = createPairingController({
     isSignedIn: () => true,
     isHostActive: () => true,
-    isTransportReady: () => true,
-    createPairingRequest,
+    transport,
     now: () => now,
   });
   return {
@@ -68,8 +71,10 @@ describe("pairing controller", () => {
       const guarded = createPairingController({
         isSignedIn: current.isSignedIn ?? (() => true),
         isHostActive: current.isHostActive ?? (() => true),
-        isTransportReady: current.isTransportReady ?? (() => true),
-        createPairingRequest: fixture.createPairingRequest,
+        transport: {
+          isReady: current.isTransportReady ?? (() => true),
+          createPairingRequest: fixture.createPairingRequest,
+        },
       });
       await expect(guarded.create()).resolves.toEqual({
         ok: false,
