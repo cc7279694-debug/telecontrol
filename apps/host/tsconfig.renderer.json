@@ -8,5 +8,10 @@
     "rootDir": ".",
     "types": ["vite/client"]
   },
-  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx", "vite.config.ts"]
+  "include": [
+    "src/renderer/**/*.ts",
+    "src/renderer/**/*.tsx",
+    "src/desktop/contract.ts",
+    "vite.config.ts"
+  ]
 }

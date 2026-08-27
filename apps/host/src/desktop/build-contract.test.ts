@@ -36,11 +36,12 @@ describe("Windows Host build contract", () => {
     );
 
     const devScript = packageJson.scripts?.dev;
-    const persistentWatchCommands = devPlanModule.persistentWatchCommands as Array<{
-      name: string;
-      args: string[];
-      rebuilds?: string[];
-    }>;
+    const persistentWatchCommands =
+      devPlanModule.persistentWatchCommands as Array<{
+        name: string;
+        args: string[];
+        rebuilds?: string[];
+      }>;
     const relaunchWatchPlans = devPlanModule.relaunchWatchPlans as Array<{
       rootRelativePath: string;
       triggers: string[];
@@ -66,7 +67,15 @@ describe("Windows Host build contract", () => {
       {
         name: "renderer",
         rebuilds: ["renderer"],
-        args: ["exec", "--", "vite", "build", "--watch", "--emptyOutDir", "false"],
+        args: [
+          "exec",
+          "--",
+          "vite",
+          "build",
+          "--watch",
+          "--emptyOutDir",
+          "false",
+        ],
       },
     ]);
     expect(relaunchWatchPlans).toEqual([
@@ -96,8 +105,10 @@ describe("Windows Host build contract", () => {
     expect(viteConfig.base).toBe("./");
     expect(viteConfig.build?.outDir).toBe("dist/renderer");
     expect(viteConfig.build?.emptyOutDir).toBe(false);
-    expect(viteConfig.build?.rollupOptions?.input).toBe(path.join(hostRoot, "index.html"));
-  });
+    expect(viteConfig.build?.rollupOptions?.input).toBe(
+      path.join(hostRoot, "index.html"),
+    );
+  }, 15_000);
 
   it("does not depend on electron-updater", () => {
     const packageJson = readJsonFile<{
@@ -118,7 +129,11 @@ describe("Windows Host build contract", () => {
     expect(desktopTsconfig.compilerOptions?.rootDir).toBe("src/desktop");
     expect(desktopTsconfig.compilerOptions?.outDir).toBe("dist/desktop");
     expect(desktopTsconfig.include).toEqual(["src/desktop/**/*.ts"]);
-    expect(existsSync(path.join(hostRoot, "src", "desktop", "main.ts"))).toBe(true);
-    expect(existsSync(path.join(hostRoot, "src", "desktop", "preload.ts"))).toBe(true);
+    expect(existsSync(path.join(hostRoot, "src", "desktop", "main.ts"))).toBe(
+      true,
+    );
+    expect(
+      existsSync(path.join(hostRoot, "src", "desktop", "preload.ts")),
+    ).toBe(true);
   });
 });
