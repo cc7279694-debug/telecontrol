@@ -64,6 +64,7 @@ function createFixture({
     }),
     disconnect: vi.fn(async () => {
       order.push("transport.disconnect");
+      for (const handler of transportStatusHandlers) handler("offline");
     }),
     heartbeat: vi.fn(async () => {
       order.push("transport.heartbeat");
@@ -192,6 +193,28 @@ describe("HostRuntimeController", () => {
       reason: "awaiting-pairing",
       errorCode: null,
     });
+  });
+
+  it("keeps Codex alive and retries Transport when startup is offline", async () => {
+    const fixture = createFixture();
+    fixture.transport.connect.mockRejectedValueOnce(
+      Object.assign(new Error("offline"), { code: "TRANSPORT_OFFLINE" }),
+    );
+
+    await expect(fixture.controller.start()).resolves.toEqual({
+      ok: true,
+      message: "Codex 已启动，等待网络恢复",
+    });
+    expect(fixture.controller.getSnapshot()).toMatchObject({
+      phase: "degraded",
+      reason: "transport-offline",
+    });
+    expect(fixture.codex.close).not.toHaveBeenCalled();
+    expect(
+      fixture.schedules.some(
+        (entry) => entry.delayMs === 5_000 && !entry.cancelled,
+      ),
+    ).toBe(true);
   });
 
   it("connects a paired device, publishes a snapshot, and starts once", async () => {
@@ -337,6 +360,26 @@ describe("HostRuntimeController", () => {
       appServerRestartAttempt: 1,
     });
     expect(fixture.ports.loadPrerequisites).toHaveBeenCalledOnce();
+  });
+
+  it("does not schedule Transport reconnect while closing after App Server exit", async () => {
+    const fixture = createFixture();
+    await fixture.controller.start();
+
+    fixture.triggerCodexExit();
+    await vi.waitFor(() =>
+      expect(
+        fixture.schedules.some(
+          (entry) => entry.delayMs === 1_000 && !entry.cancelled,
+        ),
+      ).toBe(true),
+    );
+
+    expect(
+      fixture.schedules.some(
+        (entry) => entry.delayMs === 5_000 && !entry.cancelled,
+      ),
+    ).toBe(false);
   });
 
   it("keeps the Host presence alive with recurring heartbeats", async () => {

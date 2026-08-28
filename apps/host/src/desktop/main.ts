@@ -441,8 +441,12 @@ if (!hasSingleInstanceLock) {
             label: "Codex App Server",
             critical: true,
             run: async () => {
+              const controller = runtimeController;
+              if (!controller) {
+                return { status: "fail", message: "Host 运行时未就绪" };
+              }
               try {
-                await runtimeController?.checkAppServer();
+                await controller.checkAppServer();
                 return { status: "pass", message: "App Server 握手成功" };
               } catch {
                 return { status: "fail", message: "App Server 握手失败" };

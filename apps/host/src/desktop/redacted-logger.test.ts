@@ -44,6 +44,10 @@ describe("redacted logger", () => {
       path.join(os.tmpdir(), "codex-remote-log-"),
     );
     const logger = createRedactedLogger({ directory, appVersion: "0.1.0" });
+    await writeFile(
+      path.join(directory, "host.jsonl"),
+      "x".repeat(2 * 1024 * 1024),
+    );
     const record = {
       timestamp: "2026-08-28T00:00:00.000Z",
       level: "info" as const,
@@ -52,14 +56,12 @@ describe("redacted logger", () => {
       appVersion: "0.1.0",
     };
 
-    for (let index = 0; index < 120; index += 1) {
-      await logger.write(record);
-    }
+    await logger.write(record);
 
     const fileNames = (await import("node:fs/promises")).readdir(directory);
-    expect(
-      (await fileNames).filter((name) => name.endsWith(".jsonl")).length,
-    ).toBeLessThanOrEqual(5);
+    const names = (await fileNames).filter((name) => name.endsWith(".jsonl"));
+    expect(names).toContain("host.1.jsonl");
+    expect(names.length).toBeLessThanOrEqual(5);
   });
 
   it("removes only old direct log files", async () => {

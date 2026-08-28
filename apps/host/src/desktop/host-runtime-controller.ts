@@ -4,11 +4,12 @@ import type {
   HostNotificationSink,
   RemoteCommandAdapter,
 } from "../remote-command-runner.js";
-import type {
-  LinkedDevice,
-  PairingRequest,
-  SupabaseTransportStatus,
-  TransportContext,
+import {
+  TRANSPORT_OFFLINE_CODE,
+  type LinkedDevice,
+  type PairingRequest,
+  type SupabaseTransportStatus,
+  type TransportContext,
 } from "../supabase-transport.js";
 import type { RuntimeSession } from "./supabase-auth-controller.js";
 
@@ -213,6 +214,15 @@ export function createHostRuntimeController(
     return "unknown_runtime_error";
   }
 
+  function isTransportOfflineError(error: unknown): boolean {
+    return (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      String(error.code) === TRANSPORT_OFFLINE_CODE
+    );
+  }
+
   function cancelPairingPoll() {
     pairingPollCancel?.();
     pairingPollCancel = undefined;
@@ -243,6 +253,8 @@ export function createHostRuntimeController(
     const activeTransport = transport;
     transport = undefined;
     linkedDevice = undefined;
+    removeTransportStatusListener?.();
+    removeTransportStatusListener = undefined;
     if (activeTransport)
       await activeTransport.disconnect().catch(() => undefined);
 
@@ -252,8 +264,6 @@ export function createHostRuntimeController(
     removeCodexErrorListener?.();
     removeCodexExitListener = undefined;
     removeCodexErrorListener = undefined;
-    removeTransportStatusListener?.();
-    removeTransportStatusListener = undefined;
     if (activeCodex) await activeCodex.close().catch(() => undefined);
   }
 
@@ -498,6 +508,18 @@ export function createHostRuntimeController(
       await connectDevice(device);
       return { ok: true, message: "Host 已运行" };
     } catch (error) {
+      if (isTransportOfflineError(error) && transport && codex) {
+        publish({
+          phase: "degraded",
+          reason: "transport-offline",
+          errorCode: "transport_connect_failed",
+        });
+        scheduleTransportReconnect();
+        ports.logger.warn("host_runtime_transport_offline", {
+          errorCode: "transport_connect_failed",
+        });
+        return { ok: true, message: "Codex 已启动，等待网络恢复" };
+      }
       const errorCode =
         error instanceof Error && error.message.includes("initialize")
           ? "codex_initialize_failed"

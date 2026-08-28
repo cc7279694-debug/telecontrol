@@ -97,6 +97,8 @@ export interface HostPresence {
 
 export type SupabaseTransportStatus = "connected" | "offline";
 
+export const TRANSPORT_OFFLINE_CODE = "TRANSPORT_OFFLINE";
+
 export interface PairingRequest {
   pairingId: string;
   code: string;
@@ -112,6 +114,12 @@ export interface LinkedDevice {
 export type HostEventHandler = (event: unknown) => void;
 
 const PRESENCE_WINDOW_MS = 30_000;
+
+function transportOfflineError(message: string): Error & { code: string } {
+  return Object.assign(new Error(message), {
+    code: TRANSPORT_OFFLINE_CODE,
+  });
+}
 
 export class SupabaseTransport {
   private readonly handlers = new Set<HostEventHandler>();
@@ -153,7 +161,11 @@ export class SupabaseTransport {
           status === "CLOSED"
         ) {
           this.emitStatus("offline");
-          reject(new Error(`Supabase channel subscription failed: ${status}`));
+          reject(
+            transportOfflineError(
+              `Supabase channel subscription failed: ${status}`,
+            ),
+          );
         }
       });
     });
@@ -277,7 +289,7 @@ export class SupabaseTransport {
       .select("id")
       .single<{ id: string }>();
     if (response.error) {
-      throw new Error(response.error.message);
+      throw transportOfflineError(response.error.message);
     }
   }
 
@@ -323,7 +335,7 @@ export class SupabaseTransport {
           code: "MULTIPLE_ACTIVE_DEVICES",
         });
       }
-      throw new Error(linkResponse.error.message);
+      throw transportOfflineError(linkResponse.error.message);
     }
     if (!linkResponse.data || linkResponse.data.revoked_at !== null) {
       return null;
@@ -335,7 +347,7 @@ export class SupabaseTransport {
       .eq("id", deviceId)
       .maybeSingle<LinkedDevice>();
     if (deviceResponse.error) {
-      throw new Error(deviceResponse.error.message);
+      throw transportOfflineError(deviceResponse.error.message);
     }
     if (!deviceResponse.data || deviceResponse.data.revoked_at !== null) {
       return null;
@@ -356,7 +368,7 @@ export class SupabaseTransport {
           code: "MULTIPLE_ACTIVE_DEVICES",
         });
       }
-      throw new Error(linkResponse.error.message);
+      throw transportOfflineError(linkResponse.error.message);
     }
     if (!linkResponse.data || linkResponse.data.revoked_at !== null) {
       return null;
@@ -368,7 +380,7 @@ export class SupabaseTransport {
       .eq("id", linkResponse.data.device_id)
       .maybeSingle<LinkedDevice>();
     if (deviceResponse.error) {
-      throw new Error(deviceResponse.error.message);
+      throw transportOfflineError(deviceResponse.error.message);
     }
     if (!deviceResponse.data || deviceResponse.data.revoked_at !== null) {
       return null;
