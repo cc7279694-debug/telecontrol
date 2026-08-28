@@ -8,6 +8,7 @@ import {
   removeWorkspaceInputSchema,
   requestOtpInputSchema,
   setOpenAtLoginInputSchema,
+  stopHostInputSchema,
   verifyOtpInputSchema,
   type DesktopApi,
   type DesktopState,
@@ -188,7 +189,7 @@ export function registerIpcController({
   );
   register(
     desktopChannels.stopHost,
-    noInput,
+    z.tuple([stopHostInputSchema]),
     ActionResultSchema,
     handlers.stopHost,
   );

@@ -14,6 +14,7 @@ const hostStatusLabels: Record<DesktopState["hostStatus"], string> = {
   stopped: "已停止",
   starting: "启动中",
   running: "运行中",
+  degraded: "等待配对/网络异常",
   stopping: "停止中",
   error: "异常",
 };
@@ -141,6 +142,38 @@ export function App() {
     }
   }
 
+  async function handleStartHost() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await window.codexRemoteHost.startHost();
+      setMessage(result.message);
+    } catch {
+      setMessage("Host 启动失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleStopHost() {
+    if (busy) return;
+    const force =
+      desktopState?.activeRemoteTurns !== undefined &&
+      desktopState.activeRemoteTurns > 0;
+    if (force && !window.confirm("当前有活动任务，确定要强制停止 Host 吗？")) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await window.codexRemoteHost.stopHost({ force });
+      setMessage(result.message);
+    } catch {
+      setMessage("Host 停止失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="shell">
       <section className="panel">
@@ -206,6 +239,50 @@ export function App() {
             )}
             {desktopState.authStatus === "signed-in" ? (
               <>
+                <section
+                  className="feature-card runtime-card"
+                  aria-label="Host 控制"
+                >
+                  <div className="section-heading">
+                    <div>
+                      <p className="eyebrow">运行控制</p>
+                      <h2>Windows Host</h2>
+                    </div>
+                    {desktopState.hostStatus === "running" ||
+                    desktopState.hostStatus === "degraded" ? (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => void handleStopHost()}
+                        disabled={busy}
+                      >
+                        {busy ? "处理中…" : "停止 Host"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void handleStartHost()}
+                        disabled={
+                          busy ||
+                          !desktopState.host ||
+                          desktopState.hostStatus === "starting" ||
+                          desktopState.hostStatus === "stopping"
+                        }
+                      >
+                        {busy ? "处理中…" : "启动 Host"}
+                      </button>
+                    )}
+                  </div>
+                  <p className="detail">
+                    {desktopState.runtimeReason === "awaiting-pairing"
+                      ? "Codex 已启动，请生成配对码并在手机端输入。"
+                      : desktopState.runtimeReason === "transport-offline"
+                        ? "中转连接暂时不可用，恢复网络后会自动重连。"
+                        : desktopState.activeRemoteTurns > 0
+                          ? `当前有 ${desktopState.activeRemoteTurns} 个活动任务`
+                          : "只有 Host 运行后，手机才能连接这台电脑。"}
+                  </p>
+                </section>
                 <WorkspacesScreen
                   workspaces={desktopState.workspaces}
                   disabled={busy}
@@ -217,7 +294,12 @@ export function App() {
                 <PairingScreen
                   host={desktopState.host ?? null}
                   pairing={desktopState.pairing}
-                  disabled={busy || !desktopState.host}
+                  disabled={
+                    busy ||
+                    !desktopState.host ||
+                    desktopState.hostStatus !== "degraded" ||
+                    desktopState.runtimeReason !== "awaiting-pairing"
+                  }
                   onCreate={() => void handleCreatePairingCode()}
                 />
               </>

@@ -8,6 +8,7 @@ import {
   removeWorkspaceInputSchema,
   requestOtpInputSchema,
   setOpenAtLoginInputSchema,
+  stopHostInputSchema,
   verifyOtpInputSchema,
 } from "./contract.js";
 
@@ -15,6 +16,10 @@ const validState = {
   phase: "ready",
   authStatus: "signed-out",
   hostStatus: "stopped",
+  runtimeReason: null,
+  activeRemoteTurns: 0,
+  lastObservedAt: null,
+  lastErrorCode: null,
   openAtLogin: false,
   workspaces: [],
   pairing: null,
@@ -122,9 +127,28 @@ describe("desktop contract", () => {
     expect(
       setOpenAtLoginInputSchema.safeParse({ enabled: "yes" }).success,
     ).toBe(false);
+    expect(stopHostInputSchema.parse({ force: false })).toEqual({
+      force: false,
+    });
+    expect(stopHostInputSchema.safeParse({ force: "yes" }).success).toBe(false);
     expect(confirmDataResetInputSchema.safeParse({ phrase: "" }).success).toBe(
       false,
     );
+  });
+
+  it("accepts degraded runtime state with a safe reason and counters", () => {
+    const state = DesktopStateSchema.parse({
+      ...validState,
+      hostStatus: "degraded",
+      runtimeReason: "awaiting-pairing",
+      activeRemoteTurns: 2,
+      lastObservedAt: "2026-08-28T00:00:00.000Z",
+      lastErrorCode: "transport_connect_failed",
+    });
+
+    expect(state.hostStatus).toBe("degraded");
+    expect(state.runtimeReason).toBe("awaiting-pairing");
+    expect(state.activeRemoteTurns).toBe(2);
   });
 
   it("defines only the approved preload method names", () => {

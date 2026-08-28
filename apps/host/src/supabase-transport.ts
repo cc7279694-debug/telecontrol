@@ -15,8 +15,13 @@ export interface SupabaseTransportQuery {
   update(row: Record<string, unknown>): SupabaseTransportQuery;
   select(columns?: string): SupabaseTransportQuery;
   eq(column: string, value: unknown): SupabaseTransportQuery;
+  is(column: string, value: unknown): SupabaseTransportQuery;
   single<T = unknown>(): Promise<SupabaseTransportResponse<T>>;
   maybeSingle<T = unknown>(): Promise<SupabaseTransportResponse<T | null>>;
+}
+
+export interface SupabaseTransportRealtime {
+  setAuth(accessToken: string): Promise<void>;
 }
 
 export interface SupabaseTransportChannel {
@@ -40,6 +45,7 @@ export interface SupabaseTransportClient {
     name: string,
     args: Record<string, unknown>,
   ): Promise<SupabaseTransportResponse<T>>;
+  realtime: SupabaseTransportRealtime;
 }
 
 export function asSupabaseTransportClient(
@@ -298,6 +304,11 @@ export class SupabaseTransport {
       .eq("device_id", deviceId)
       .maybeSingle<{ device_id: string; revoked_at: string | null }>();
     if (linkResponse.error) {
+      if (linkResponse.error.code === "PGRST116") {
+        throw Object.assign(new Error("Multiple active devices"), {
+          code: "MULTIPLE_ACTIVE_DEVICES",
+        });
+      }
       throw new Error(linkResponse.error.message);
     }
     if (!linkResponse.data || linkResponse.data.revoked_at !== null) {
@@ -316,6 +327,47 @@ export class SupabaseTransport {
       return null;
     }
     return deviceResponse.data;
+  }
+
+  async findActiveLinkedDevice(hostId: string): Promise<LinkedDevice | null> {
+    const linkResponse = await this.client
+      .from("host_device_links")
+      .select("device_id,revoked_at")
+      .eq("host_id", hostId)
+      .is("revoked_at", null)
+      .maybeSingle<{ device_id: string; revoked_at: string | null }>();
+    if (linkResponse.error) {
+      if (linkResponse.error.code === "PGRST116") {
+        throw Object.assign(new Error("Multiple active devices"), {
+          code: "MULTIPLE_ACTIVE_DEVICES",
+        });
+      }
+      throw new Error(linkResponse.error.message);
+    }
+    if (!linkResponse.data || linkResponse.data.revoked_at !== null) {
+      return null;
+    }
+
+    const deviceResponse = await this.client
+      .from("devices")
+      .select("id,public_key,revoked_at")
+      .eq("id", linkResponse.data.device_id)
+      .maybeSingle<LinkedDevice>();
+    if (deviceResponse.error) {
+      throw new Error(deviceResponse.error.message);
+    }
+    if (!deviceResponse.data || deviceResponse.data.revoked_at !== null) {
+      return null;
+    }
+    return deviceResponse.data;
+  }
+
+  async refreshAccessToken(accessToken: string): Promise<void> {
+    const token = accessToken.trim();
+    if (!token) {
+      throw new Error("Supabase access token is empty");
+    }
+    await this.client.realtime.setAuth(token);
   }
 
   async createPairingRequest(): Promise<PairingRequest> {

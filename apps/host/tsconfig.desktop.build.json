@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.desktop.json",
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
-  "include": ["src/desktop/**/*.ts", "src/supabase-transport.ts"]
+  "include": ["src/**/*.ts"]
 }

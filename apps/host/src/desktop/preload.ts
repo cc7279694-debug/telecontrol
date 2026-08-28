@@ -9,6 +9,7 @@ import {
   removeWorkspaceInputSchema,
   requestOtpInputSchema,
   setOpenAtLoginInputSchema,
+  stopHostInputSchema,
   verifyOtpInputSchema,
   type DesktopApi,
 } from "./contract.js";
@@ -50,7 +51,12 @@ const desktopApi: DesktopApi = Object.freeze({
     invokeAndParse(desktopChannels.createPairingCode, ActionResultSchema),
   startHost: () =>
     invokeAndParse(desktopChannels.startHost, ActionResultSchema),
-  stopHost: () => invokeAndParse(desktopChannels.stopHost, ActionResultSchema),
+  stopHost: (input) =>
+    invokeAndParse(
+      desktopChannels.stopHost,
+      ActionResultSchema,
+      stopHostInputSchema.parse(input),
+    ),
   runDoctor: () =>
     invokeAndParse(desktopChannels.runDoctor, ActionResultSchema),
   setOpenAtLogin: (input) =>

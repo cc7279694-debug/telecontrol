@@ -49,6 +49,12 @@ export type AuthSnapshot = {
 
 export type AuthActionResult = { ok: boolean; message: string };
 
+export type RuntimeSession = {
+  accessToken: string;
+  ownerId: string;
+  authSessionId: string | null;
+};
+
 const storageKey = "codex-remote.host.session";
 
 function emptySnapshot(): AuthSnapshot {
@@ -122,6 +128,10 @@ export function createSupabaseAuthController({
   clientFactory?: AuthClientFactory;
 }) {
   let snapshot = emptySnapshot();
+  let runtimeSession: RuntimeSession | null = null;
+  const runtimeSessionHandlers = new Set<
+    (session: RuntimeSession | null) => void
+  >();
   const storage = {
     getItem: async (key: string) => {
       if (key !== storageKey) return null;
@@ -197,6 +207,8 @@ export function createSupabaseAuthController({
   async function applySession(session: Session | null) {
     if (!session) {
       snapshot = emptySnapshot();
+      runtimeSession = null;
+      for (const handler of runtimeSessionHandlers) handler(null);
       return snapshot;
     }
     const identity = await getIdentity(session);
@@ -206,19 +218,29 @@ export function createSupabaseAuthController({
       ownerId: identity.ownerId,
       authSessionId: identity.authSessionId,
     };
+    if (identity.ownerId) {
+      const nextRuntimeSession: RuntimeSession = {
+        accessToken: session.access_token,
+        ownerId: identity.ownerId,
+        authSessionId: identity.authSessionId,
+      };
+      runtimeSession = nextRuntimeSession;
+      for (const handler of runtimeSessionHandlers) {
+        handler({ ...nextRuntimeSession });
+      }
+    } else {
+      runtimeSession = null;
+      for (const handler of runtimeSessionHandlers) handler(null);
+    }
     return snapshot;
   }
 
   client.auth.onAuthStateChange((_event, session) => {
-    if (!session) snapshot = emptySnapshot();
-    else {
-      snapshot = {
-        signedIn: true,
-        maskedEmail: maskEmail(session.user.email),
-        ownerId: session.user.id,
-        authSessionId: null,
-      };
-    }
+    void applySession(session).catch(() => {
+      snapshot = emptySnapshot();
+      runtimeSession = null;
+      for (const handler of runtimeSessionHandlers) handler(null);
+    });
   });
 
   async function persistSession(session: Session) {
@@ -228,6 +250,8 @@ export function createSupabaseAuthController({
       await client.auth.signOut({ scope: "local" }).catch(() => undefined);
       await credentialStore.write(existing);
       snapshot = emptySnapshot();
+      runtimeSession = null;
+      for (const handler of runtimeSessionHandlers) handler(null);
       return false;
     }
     const hostKey = await hostKeyManager.getOrCreate();
@@ -336,7 +360,30 @@ export function createSupabaseAuthController({
     if (result.error) return { ok: false, message: "退出登录失败，请稍后重试" };
     await credentialStore.remove();
     snapshot = emptySnapshot();
+    runtimeSession = null;
+    for (const handler of runtimeSessionHandlers) handler(null);
     return { ok: true, message: "已退出登录" };
+  }
+
+  async function getRuntimeSession(): Promise<RuntimeSession | null> {
+    if (runtimeSession) return { ...runtimeSession };
+    const result = await client.auth.getSession();
+    if (result.error || !result.data.session) return null;
+    await applySession(result.data.session);
+    const identity = await getIdentity(result.data.session);
+    if (!identity.ownerId) return null;
+    return {
+      accessToken: result.data.session.access_token,
+      ownerId: identity.ownerId,
+      authSessionId: identity.authSessionId,
+    };
+  }
+
+  function onRuntimeSessionChanged(
+    handler: (session: RuntimeSession | null) => void,
+  ) {
+    runtimeSessionHandlers.add(handler);
+    return () => runtimeSessionHandlers.delete(handler);
   }
 
   return {
@@ -345,6 +392,8 @@ export function createSupabaseAuthController({
     restore,
     refresh,
     signOut,
+    getRuntimeSession,
+    onRuntimeSessionChanged,
     getSnapshot: () => snapshot,
     getClient: () => client,
   };

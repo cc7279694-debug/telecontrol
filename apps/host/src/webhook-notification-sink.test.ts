@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createRotatingWebhookNotificationSink,
   createWebhookNotificationSink,
   type HostNotificationMetadata,
 } from "./webhook-notification-sink.js";
@@ -89,5 +90,46 @@ describe("webhook notification sink", () => {
       sink.notify({ hostId: "host-1", kind: "completed", eventId: "event-1" }),
     ).rejects.toThrow("通知服务请求超时");
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("rotates the access token without rebuilding the notification channel", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const sink = createRotatingWebhookNotificationSink({
+      endpoint: "https://remote.example.test/api/push/notify",
+      accessToken: "old-token",
+      fetcher,
+    });
+
+    await sink.notify({
+      hostId: "host-1",
+      kind: "completed",
+      eventId: "event-1",
+    });
+    sink.setAccessToken("new-token");
+    await sink.notify({ hostId: "host-1", kind: "failed", eventId: "event-2" });
+
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({
+      headers: { authorization: "Bearer old-token" },
+    });
+    expect(fetcher.mock.calls[1]?.[1]).toMatchObject({
+      headers: { authorization: "Bearer new-token" },
+    });
+  });
+
+  it("fails closed when the refreshed session has signed out", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const sink = createRotatingWebhookNotificationSink({
+      endpoint: "https://remote.example.test/api/push/notify",
+      accessToken: "token",
+      fetcher,
+    });
+    sink.setAccessToken(null);
+
+    await expect(
+      sink.notify({ hostId: "host-1", kind: "approval", eventId: "event-1" }),
+    ).rejects.toThrow("通知访问令牌不可用");
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });

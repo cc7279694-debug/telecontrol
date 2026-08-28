@@ -37,6 +37,7 @@ const hostStatusLabels: Record<DesktopState["hostStatus"], string> = {
   stopped: "已停止",
   starting: "启动中",
   running: "运行中",
+  degraded: "等待配对/网络异常",
   stopping: "停止中",
   error: "异常",
 };
@@ -57,7 +58,9 @@ export function createTrayController<TTray extends TrayLike>({
   function buildMenu() {
     const state = getState();
     const shouldStopHost =
-      state.hostStatus === "running" || state.hostStatus === "starting";
+      state.hostStatus === "running" ||
+      state.hostStatus === "degraded" ||
+      state.hostStatus === "starting";
     const hostTransitioning =
       state.hostStatus === "starting" || state.hostStatus === "stopping";
 

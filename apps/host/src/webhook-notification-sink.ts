@@ -12,6 +12,10 @@ export interface WebhookNotificationSinkOptions {
   timeoutMs?: number;
 }
 
+export interface RotatingWebhookNotificationSink extends HostNotificationSink {
+  setAccessToken(accessToken: string | null): void;
+}
+
 export function createWebhookNotificationSink(
   options: WebhookNotificationSinkOptions,
 ): HostNotificationSink {
@@ -26,6 +30,54 @@ export function createWebhookNotificationSink(
 
   return {
     async notify(metadata) {
+      const controller = new AbortController();
+      let timedOut = false;
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs);
+      let response: Response;
+      try {
+        response = await fetcher(endpoint, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(metadata),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (timedOut) throw new Error("通知服务请求超时");
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (!response.ok) {
+        throw new Error(`通知服务返回 ${response.status}`);
+      }
+    },
+  };
+}
+
+export function createRotatingWebhookNotificationSink({
+  endpoint: rawEndpoint,
+  accessToken: initialAccessToken,
+  fetcher = fetch,
+  timeoutMs = 10_000,
+}: WebhookNotificationSinkOptions): RotatingWebhookNotificationSink {
+  const endpoint = validateEndpoint(rawEndpoint);
+  let accessToken = initialAccessToken.trim() || null;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error("通知超时时间无效");
+  }
+
+  return {
+    setAccessToken(nextAccessToken) {
+      accessToken = nextAccessToken?.trim() || null;
+    },
+    async notify(metadata) {
+      if (!accessToken) throw new Error("通知访问令牌不可用");
       const controller = new AbortController();
       let timedOut = false;
       const timeout = setTimeout(() => {

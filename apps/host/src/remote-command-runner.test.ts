@@ -401,6 +401,35 @@ describe("RemoteCommandRunner", () => {
     });
   });
 
+  it("releases the workspace when a remote turn reaches a terminal status", async () => {
+    const started = await createRunner(
+      {
+        type: "turn.start",
+        workspaceId: "workspace-1",
+        threadId: "thread-1",
+        text: "执行测试",
+      },
+      (store) => store.markHostOwned("thread-1", "workspace-1", "idle"),
+    );
+
+    await started.runner.runOnce();
+    expect(started.store.hasActiveTurn("workspace-1")).toBe(true);
+    expect(started.store.get("thread-1")).toMatchObject({
+      state: "running",
+      activeTurnId: "turn-1",
+    });
+
+    started.adapter.notificationHandler?.({
+      method: "turn/status",
+      params: { threadId: "thread-1", turnId: "turn-1", status: "completed" },
+    });
+
+    await vi.waitFor(() => {
+      expect(started.store.hasActiveTurn("workspace-1")).toBe(false);
+      expect(started.store.get("thread-1")).toMatchObject({ state: "idle" });
+    });
+  });
+
   it("keeps remote event forwarding working when notification fails", async () => {
     const notificationSink = {
       notify: vi.fn().mockRejectedValue(new Error("notification offline")),
@@ -419,5 +448,21 @@ describe("RemoteCommandRunner", () => {
     });
     await vi.waitFor(() => expect(notificationSink.notify).toHaveBeenCalled());
     expect(transport.sentEvents).toHaveLength(2);
+  });
+
+  it("publishes an authoritative encrypted snapshot for a linked device", async () => {
+    const { runner, transport } = await createRunner({ type: "host.snapshot" });
+
+    await runner.publishAuthoritativeSnapshot(transport.linkedDevice!);
+
+    expect(transport.sentEvents).toHaveLength(1);
+    expect(transport.sentEvents[0]).toMatchObject({
+      hostId: "host-1",
+      deviceId: "device-1",
+      kind: "host.snapshot.result",
+    });
+    expect(transport.sentEvents[0]?.messageId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
   });
 });

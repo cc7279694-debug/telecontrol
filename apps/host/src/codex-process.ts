@@ -8,12 +8,10 @@ export interface CodexAppServerLaunchSpec {
 }
 
 export function getCodexAppServerLaunchSpec(
-  env: NodeJS.ProcessEnv = process.env,
+  executablePath: string,
 ): CodexAppServerLaunchSpec {
-  const configuredPath = env.CODEX_CLI_PATH?.trim();
-  const isWindows = env.OS === "Windows_NT" || process.platform === "win32";
   return {
-    command: configuredPath || (isWindows ? "codex.cmd" : "codex"),
+    command: executablePath,
     args: ["app-server"],
   };
 }
@@ -21,7 +19,16 @@ export function getCodexAppServerLaunchSpec(
 export interface StdioChildProcess {
   stdin: NodeJS.WritableStream;
   stdout: NodeJS.ReadableStream;
+  stderr: NodeJS.ReadableStream;
   kill(signal?: NodeJS.Signals | number): boolean;
+  once: (
+    event: "exit" | "error",
+    listener: (...args: unknown[]) => void,
+  ) => unknown;
+  removeListener: (
+    event: "exit" | "error",
+    listener: (...args: unknown[]) => void,
+  ) => unknown;
 }
 
 export class StdioLineChannel implements LineChannel {
@@ -56,26 +63,54 @@ export interface CodexAppServerProcess {
   child: StdioChildProcess;
   channel: StdioLineChannel;
   client: JsonRpcClient;
+  close: () => void;
+  onExit: (
+    handler: (code: number | null, signal: string | null) => void,
+  ) => () => void;
+  onError: (handler: (error: Error) => void) => () => void;
 }
 
 export function createCodexAppServerProcess(
+  executablePath: string,
   env: NodeJS.ProcessEnv = process.env,
 ): CodexAppServerProcess {
-  const spec = getCodexAppServerLaunchSpec(env);
-  const isWindowsScript =
-    process.platform === "win32" && /\.(cmd|bat)$/i.test(spec.command);
-  const command = isWindowsScript ? env.ComSpec || "cmd.exe" : spec.command;
-  const args = isWindowsScript
-    ? ["/d", "/c", spec.command, ...spec.args]
-    : spec.args;
-  const child = spawn(command, args, {
-    stdio: ["pipe", "pipe", "inherit"],
+  const spec = getCodexAppServerLaunchSpec(executablePath);
+  const child = spawn(spec.command, spec.args, {
+    stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
+    env: { ...env },
   } satisfies SpawnOptions) as StdioChildProcess;
+  child.stderr.on("data", () => undefined);
   const channel = new StdioLineChannel(child);
+  const client = new JsonRpcClient(channel);
+  let closed = false;
   return {
     child,
     channel,
-    client: new JsonRpcClient(channel),
+    client,
+    close: () => {
+      if (closed) return;
+      closed = true;
+      client.close();
+    },
+    onExit: (handler) => {
+      const listener = (...args: unknown[]) => {
+        handler(
+          typeof args[0] === "number" ? args[0] : null,
+          typeof args[1] === "string" ? args[1] : null,
+        );
+      };
+      child.once("exit", listener);
+      return () => child.removeListener("exit", listener);
+    },
+    onError: (handler) => {
+      const listener = (...args: unknown[]) => {
+        handler(
+          args[0] instanceof Error ? args[0] : new Error("Codex 进程启动失败"),
+        );
+      };
+      child.once("error", listener);
+      return () => child.removeListener("error", listener);
+    },
   };
 }

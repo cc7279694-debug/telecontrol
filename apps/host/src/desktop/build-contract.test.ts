@@ -132,15 +132,12 @@ describe("Windows Host build contract", () => {
 
     expect(desktopTsconfig.compilerOptions?.rootDir).toBe("src");
     expect(desktopTsconfig.compilerOptions?.outDir).toBe("dist/desktop");
-    expect(desktopTsconfig.include).toEqual(["src/desktop/**/*.ts"]);
+    expect(desktopTsconfig.include).toEqual(["src/**/*.ts"]);
     expect(desktopBuildTsconfig.exclude).toEqual([
       "src/**/*.test.ts",
       "src/**/*.test.tsx",
     ]);
-    expect(desktopBuildTsconfig.include).toEqual([
-      "src/desktop/**/*.ts",
-      "src/supabase-transport.ts",
-    ]);
+    expect(desktopBuildTsconfig.include).toEqual(["src/**/*.ts"]);
     expect(existsSync(path.join(hostRoot, "src", "desktop", "main.ts"))).toBe(
       true,
     );

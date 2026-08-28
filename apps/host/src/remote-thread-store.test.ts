@@ -44,4 +44,42 @@ describe("RemoteThreadStore", () => {
     const store = new RemoteThreadStore();
     expect(store.canWrite("missing-thread")).toBe(false);
   });
+
+  it("tracks active workspaces and treats unknown host turns as in use", () => {
+    const store = new RemoteThreadStore();
+    store.markHostOwned("thread-running", "workspace-1", "running", "turn-1");
+    store.markHostOwned("thread-idle", "workspace-1", "idle");
+    store.markExternalRunning("thread-external", "workspace-2");
+
+    expect(store.hasActiveTurn("workspace-1")).toBe(true);
+    expect(store.hasActiveTurn("workspace-2")).toBe(false);
+    expect(store.activeTurnCount()).toBe(1);
+
+    store.markRunningUnknown();
+
+    expect(store.get("thread-running")).toMatchObject({ state: "unknown" });
+    expect(store.hasActiveTurn("workspace-1")).toBe(true);
+    expect(store.canWrite("thread-running")).toBe(false);
+  });
+
+  it("returns recoverable host threads as defensive copies", () => {
+    const store = new RemoteThreadStore();
+    store.markHostOwned("thread-1", "workspace-1", "unknown", "turn-1");
+    store.markHostOwned("thread-2", "workspace-2", "idle");
+    store.markExternalRunning("thread-3", "workspace-3");
+
+    const recoverable = store.listRecoverable();
+    expect(recoverable).toEqual([
+      {
+        threadId: "thread-1",
+        workspaceId: "workspace-1",
+        owner: "host",
+        state: "unknown",
+        activeTurnId: "turn-1",
+      },
+    ]);
+
+    recoverable[0]!.state = "idle";
+    expect(store.get("thread-1")?.state).toBe("unknown");
+  });
 });

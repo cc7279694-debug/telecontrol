@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createEnvelope,
   type RemoteEnvelope,
@@ -80,6 +80,12 @@ class FakeQuery implements SupabaseTransportQuery {
     return this;
   }
 
+  is(_column: string, _value: unknown): SupabaseTransportQuery {
+    void _column;
+    void _value;
+    return this;
+  }
+
   async single<T>(): Promise<SupabaseTransportResponse<T>> {
     return (this.responses.shift() ??
       this.response) as SupabaseTransportResponse<T>;
@@ -96,6 +102,11 @@ class FakeClient implements SupabaseTransportClient {
   lastChannel: FakeChannel | undefined;
   rpcResponse: SupabaseTransportResponse<unknown> = { data: null, error: null };
   lastRpc: { name: string; args: Record<string, unknown> } | undefined;
+  readonly realtime = {
+    setAuth: vi.fn(async (_accessToken: string) => {
+      void _accessToken;
+    }),
+  };
 
   channel(
     topic: string,
@@ -404,6 +415,53 @@ describe("SupabaseTransport", () => {
 
     expect(pairing.pairingId).toBe("pairing-2");
     expect(client.lastRpc?.args.p_host_id).toBe("host-2");
+  });
+
+  it("finds the active linked device before the private channel is connected", async () => {
+    const client = new FakeClient();
+    client.query.responses.push(
+      { data: { device_id: "device-1", revoked_at: null }, error: null },
+      {
+        data: {
+          id: "device-1",
+          public_key: "device-public-key",
+          revoked_at: null,
+        },
+        error: null,
+      },
+    );
+    const transport = new SupabaseTransport(client);
+    transport.setPairingHostId("host-1");
+
+    await expect(transport.findActiveLinkedDevice("host-1")).resolves.toEqual({
+      id: "device-1",
+      public_key: "device-public-key",
+      revoked_at: null,
+    });
+  });
+
+  it("refreshes Realtime authorization without reconnecting the channel", async () => {
+    const client = new FakeClient();
+    const transport = new SupabaseTransport(client);
+
+    await transport.refreshAccessToken("new-access-token");
+
+    expect(client.realtime.setAuth).toHaveBeenCalledWith("new-access-token");
+  });
+
+  it("reports multiple active devices instead of choosing one", async () => {
+    const client = new FakeClient();
+    client.query.response = {
+      data: null,
+      error: { code: "PGRST116", message: "multiple rows" },
+    };
+    const transport = new SupabaseTransport(client);
+
+    await expect(
+      transport.findActiveLinkedDevice("host-1"),
+    ).rejects.toMatchObject({
+      code: "MULTIPLE_ACTIVE_DEVICES",
+    });
   });
 
   it("forwards broadcast events and closes the private channel", async () => {

@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import userEvent from "@testing-library/user-event";
+import { userEvent } from "@testing-library/user-event";
 import type { DesktopApi, DesktopState } from "../desktop/contract.js";
 import { App } from "./app.js";
 
@@ -14,6 +14,10 @@ const stoppedState: DesktopState = {
   phase: "ready",
   authStatus: "signed-out",
   hostStatus: "stopped",
+  runtimeReason: null,
+  activeRemoteTurns: 0,
+  lastObservedAt: null,
+  lastErrorCode: null,
   openAtLogin: false,
   workspaces: [],
   pairing: null,
@@ -156,5 +160,31 @@ describe("Host renderer", () => {
 
     expect(await screen.findByText("123456")).toBeInTheDocument();
     expect(screen.getByText(/有效期至/)).toBeInTheDocument();
+  });
+
+  it("starts the Host from the desktop controls", async () => {
+    const api = {
+      getDesktopState: vi.fn(async () => ({
+        ...stoppedState,
+        authStatus: "signed-in",
+        host: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Windows Host",
+          protocolVersion: 1,
+        },
+      })),
+      subscribeDesktopState: vi.fn(() => vi.fn()),
+      startHost: vi.fn(async () => ({ ok: true, message: "Host 已运行" })),
+    } as unknown as DesktopApi;
+    Object.defineProperty(window, "codexRemoteHost", {
+      configurable: true,
+      value: api,
+    });
+
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "启动 Host" }));
+
+    expect(api.startHost).toHaveBeenCalledOnce();
   });
 });

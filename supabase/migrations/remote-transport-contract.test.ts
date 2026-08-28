@@ -8,7 +8,7 @@ const migration = readFileSync(
 const sessionMigration = readFileSync(
   new URL("./20260824020757_add_web_device_session.sql", import.meta.url),
   "utf8",
-);
+).replace(/\r\n/g, "\n");
 const packageJson = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
 ) as { scripts?: Record<string, string> };

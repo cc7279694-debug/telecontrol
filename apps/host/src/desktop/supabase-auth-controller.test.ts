@@ -15,6 +15,8 @@ const session = {
 
 function createFixture() {
   let storedSession: Session | null = null;
+  let authStateChangeCallback:
+    ((event: string, session: Session | null) => void) | undefined;
   const auth = {
     signInWithOtp: vi.fn(async () => ({
       data: { user: null, session: null },
@@ -42,9 +44,10 @@ function createFixture() {
       data: { claims: { sub: user.id, session_id: "session-1" } },
       error: null,
     })),
-    onAuthStateChange: vi.fn(() => ({
-      data: { subscription: { unsubscribe: vi.fn() } },
-    })),
+    onAuthStateChange: vi.fn((callback) => {
+      authStateChangeCallback = callback;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    }),
   };
   const credentialStore = {
     read: vi.fn(async (): Promise<CredentialPayload | null> => null),
@@ -86,6 +89,8 @@ function createFixture() {
     auth,
     controller,
     credentialStore,
+    emitAuthStateChange: (event: string, nextSession: Session | null) =>
+      authStateChangeCallback?.(event, nextSession),
     getClientOptions: () => clientOptions,
   };
 }
@@ -166,7 +171,7 @@ describe("supabase auth controller", () => {
     fixture.auth.setSession.mockResolvedValueOnce({
       data: { session: null },
       error: new Error("revoked") as never,
-    });
+    } as never);
 
     await expect(fixture.controller.restore()).resolves.toEqual({
       ok: false,
@@ -228,5 +233,35 @@ describe("supabase auth controller", () => {
       message: "已退出登录",
     });
     expect(fixture.credentialStore.remove).toHaveBeenCalled();
+  });
+
+  it("exposes a main-process-only runtime session and refresh notifications", async () => {
+    const fixture = createFixture();
+    const listener = vi.fn();
+    fixture.controller.onRuntimeSessionChanged(listener);
+
+    await fixture.controller.verifyOtp("demo@example.com", "123456");
+    const runtimeSession = await fixture.controller.getRuntimeSession();
+
+    expect(runtimeSession).toEqual({
+      accessToken: "access-token",
+      ownerId: "user-1",
+      authSessionId: "session-1",
+    });
+
+    fixture.emitAuthStateChange("TOKEN_REFRESHED", {
+      ...session,
+      access_token: "refreshed-access-token",
+    });
+    await vi.waitFor(() => {
+      expect(listener).toHaveBeenLastCalledWith({
+        accessToken: "refreshed-access-token",
+        ownerId: "user-1",
+        authSessionId: "session-1",
+      });
+    });
+
+    fixture.emitAuthStateChange("SIGNED_OUT", null);
+    await vi.waitFor(() => expect(listener).toHaveBeenLastCalledWith(null));
   });
 });

@@ -40,6 +40,41 @@ export class RemoteThreadStore {
     return entry?.owner === "host" && entry.state !== "unknown";
   }
 
+  hasActiveTurn(workspaceId: string): boolean {
+    return Array.from(this.threads.values()).some(
+      (entry) =>
+        entry.owner === "host" &&
+        entry.workspaceId === workspaceId &&
+        (entry.state === "running" || entry.state === "unknown"),
+    );
+  }
+
+  activeTurnCount(): number {
+    return Array.from(this.threads.values()).filter(
+      (entry) =>
+        entry.owner === "host" &&
+        (entry.state === "running" || entry.state === "unknown"),
+    ).length;
+  }
+
+  listRecoverable(): RemoteThreadOwnership[] {
+    return Array.from(this.threads.values())
+      .filter(
+        (entry) =>
+          entry.owner === "host" &&
+          (entry.state === "running" || entry.state === "unknown"),
+      )
+      .map((entry) => ({ ...entry }));
+  }
+
+  markRunningUnknown(): void {
+    for (const entry of this.threads.values()) {
+      if (entry.owner === "host" && entry.state === "running") {
+        this.set({ ...entry, state: "unknown" });
+      }
+    }
+  }
+
   markHostOwned(
     threadId: string,
     workspaceId: string,

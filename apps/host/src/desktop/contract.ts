@@ -29,7 +29,25 @@ export const DesktopStateSchema = z
       .strict()
       .nullable()
       .optional(),
-    hostStatus: z.enum(["stopped", "starting", "running", "stopping", "error"]),
+    hostStatus: z.enum([
+      "stopped",
+      "starting",
+      "running",
+      "degraded",
+      "stopping",
+      "error",
+    ]),
+    runtimeReason: z
+      .enum([
+        "awaiting-pairing",
+        "transport-offline",
+        "codex-restarting",
+        "doctor-required",
+      ])
+      .nullable(),
+    activeRemoteTurns: z.number().int().nonnegative(),
+    lastObservedAt: z.string().datetime({ offset: true }).nullable(),
+    lastErrorCode: z.string().max(100).nullable(),
     openAtLogin: z.boolean(),
     workspaces: z.array(workspaceStateSchema).max(100),
     pairing: pairingDisplaySchema.nullable(),
@@ -75,6 +93,12 @@ export const removeWorkspaceInputSchema = z
 export const setOpenAtLoginInputSchema = z
   .object({
     enabled: z.boolean(),
+  })
+  .strict();
+
+export const stopHostInputSchema = z
+  .object({
+    force: z.boolean(),
   })
   .strict();
 
@@ -126,6 +150,7 @@ export type RequestOtpInput = z.infer<typeof requestOtpInputSchema>;
 export type VerifyOtpInput = z.infer<typeof verifyOtpInputSchema>;
 export type RemoveWorkspaceInput = z.infer<typeof removeWorkspaceInputSchema>;
 export type SetOpenAtLoginInput = z.infer<typeof setOpenAtLoginInputSchema>;
+export type StopHostInput = z.infer<typeof stopHostInputSchema>;
 export type ConfirmDataResetInput = z.infer<typeof confirmDataResetInputSchema>;
 
 export type DesktopApi = {
@@ -137,7 +162,7 @@ export type DesktopApi = {
   removeWorkspace: (input: RemoveWorkspaceInput) => Promise<ActionResult>;
   createPairingCode: () => Promise<ActionResult>;
   startHost: () => Promise<ActionResult>;
-  stopHost: () => Promise<ActionResult>;
+  stopHost: (input: StopHostInput) => Promise<ActionResult>;
   runDoctor: () => Promise<ActionResult>;
   setOpenAtLogin: (input: SetOpenAtLoginInput) => Promise<ActionResult>;
   openLogFolder: () => Promise<ActionResult>;

@@ -8,6 +8,7 @@ import {
   Menu,
   protocol,
   safeStorage,
+  shell,
   Tray,
   type NativeImage,
   type MenuItemConstructorOptions,
@@ -37,12 +38,20 @@ import { loadPublicRuntimeConfig } from "./public-runtime-config.js";
 import { createSupabaseAuthController } from "./supabase-auth-controller.js";
 import { createConfigStore, type HostConfig } from "./config-store.js";
 import { createWorkspaceAuthorizer } from "./workspace-authorizer.js";
-import { createPairingController } from "./pairing-controller.js";
-import { createSupabasePairingTransport } from "./pairing-transport.js";
+import { createRedactedLogger } from "./redacted-logger.js";
+import { createDoctor } from "./doctor.js";
+import { createHostRuntimeController } from "./host-runtime-controller.js";
+import { resolveCodexCli } from "./codex-cli-resolver.js";
+import { CodexAppServerAdapter } from "../codex-app-server-adapter.js";
+import { createCodexAppServerProcess } from "../codex-process.js";
+import { RemoteCommandRunner } from "../remote-command-runner.js";
+import { RemoteThreadStore } from "../remote-thread-store.js";
+import { createRotatingWebhookNotificationSink } from "../webhook-notification-sink.js";
 import {
   asSupabaseTransportClient,
   SupabaseTransport,
 } from "../supabase-transport.js";
+import type { RuntimeTransport } from "./host-runtime-controller.js";
 
 registerAppScheme(protocol);
 
@@ -103,6 +112,10 @@ if (!hasSingleInstanceLock) {
     phase: "ready",
     authStatus: "signed-out",
     hostStatus: "stopped",
+    runtimeReason: null,
+    activeRemoteTurns: 0,
+    lastObservedAt: null,
+    lastErrorCode: null,
     openAtLogin: false,
     workspaces: [],
     pairing: null,
@@ -118,16 +131,30 @@ if (!hasSingleInstanceLock) {
   let hostKeyManager: ReturnType<typeof createHostKeyManager> | undefined;
   let workspaceAuthorizer:
     ReturnType<typeof createWorkspaceAuthorizer> | undefined;
-  let pairingTransport:
-    ReturnType<typeof createSupabasePairingTransport> | undefined;
-  const activeTurnWorkspaceIds = new Set<string>();
-  let pairingController: ReturnType<typeof createPairingController> | undefined;
+  let runtimeController:
+    ReturnType<typeof createHostRuntimeController> | undefined;
+  let runtimeConfig: ReturnType<typeof loadPublicRuntimeConfig> | undefined;
+  let threadStore: RemoteThreadStore | undefined;
+  let redactedLogger: ReturnType<typeof createRedactedLogger> | undefined;
   const unavailableAction = async () => unavailableActionResult;
   const unavailableDataResetHandlers: DataResetDesktopHandlers = {
     beginDataReset: async () => ({ phrase: "此功能尚未启用" }),
     confirmDataReset: unavailableAction,
   };
   let dataResetHandlers = unavailableDataResetHandlers;
+
+  function runtimeStatePatch() {
+    const runtime = runtimeController?.getSnapshot();
+    return runtime
+      ? {
+          hostStatus: runtime.phase,
+          runtimeReason: runtime.reason,
+          activeRemoteTurns: runtime.activeRemoteTurns,
+          lastObservedAt: runtime.lastObservedAt,
+          lastErrorCode: runtime.errorCode,
+        }
+      : {};
+  }
 
   function authStatePatch() {
     const snapshot = authController?.getSnapshot();
@@ -185,18 +212,6 @@ if (!hasSingleInstanceLock) {
         await configStore.write(localConfig);
       }
 
-      const hostTransport = new SupabaseTransport(
-        asSupabaseTransportClient(controller.getClient()),
-      );
-      hostTransport.setPairingHostId(host.id);
-      pairingTransport = createSupabasePairingTransport({
-        transport: hostTransport,
-        getHostId: () => desktopState.host?.id ?? null,
-        isSessionReady: () => {
-          const current = authController?.getSnapshot();
-          return current?.signedIn === true && current.authSessionId !== null;
-        },
-      });
       return { ok: true as const, message: "登录成功" };
     } catch (error) {
       const message =
@@ -244,7 +259,7 @@ if (!hasSingleInstanceLock) {
       try {
         const result = await authController.signOut();
         if (result.ok) {
-          pairingTransport = undefined;
+          await runtimeController?.stop({ force: true });
           updateDesktopState({
             ...desktopState,
             ...authStatePatch(),
@@ -285,9 +300,7 @@ if (!hasSingleInstanceLock) {
     removeWorkspace: async ({ workspaceId }) => {
       if (!workspaceAuthorizer) return unavailableActionResult;
       try {
-        await workspaceAuthorizer.removeWorkspace(workspaceId, () =>
-          activeTurnWorkspaceIds.has(workspaceId),
-        );
+        await workspaceAuthorizer.removeWorkspace(workspaceId);
         updateDesktopState({
           ...desktopState,
           workspaces: workspaceAuthorizer.list(),
@@ -303,18 +316,180 @@ if (!hasSingleInstanceLock) {
       }
     },
     createPairingCode: async () => {
-      if (!pairingController) return unavailableActionResult;
-      const result = await pairingController.create();
+      if (!runtimeController) return unavailableActionResult;
+      try {
+        const pairing = await runtimeController.createPairingRequest();
+        updateDesktopState({
+          ...desktopState,
+          pairing: { code: pairing.code, expiresAt: pairing.expiresAt },
+          notice: "配对码已生成",
+        });
+        return { ok: true, message: "配对码已生成" };
+      } catch {
+        return { ok: false, message: "配对码生成失败，请先启动 Host" };
+      }
+    },
+    startHost: async () => {
+      if (!runtimeController) return unavailableActionResult;
+      const result = await runtimeController.start();
       updateDesktopState({
         ...desktopState,
-        pairing: result.pairing,
+        ...runtimeStatePatch(),
         notice: result.message,
       });
-      return { ok: result.ok, message: result.message };
+      return result;
     },
-    startHost: unavailableAction,
-    stopHost: unavailableAction,
-    runDoctor: unavailableAction,
+    stopHost: async (input) => {
+      if (!runtimeController) return unavailableActionResult;
+      const result = await runtimeController.stop(input);
+      updateDesktopState({
+        ...desktopState,
+        ...runtimeStatePatch(),
+        notice: result.message,
+      });
+      return result;
+    },
+    runDoctor: async () => {
+      if (!runtimeConfig || !workspaceAuthorizer || !redactedLogger) {
+        return unavailableActionResult;
+      }
+      const report = await createDoctor({
+        appVersion: app.getVersion(),
+        checks: [
+          {
+            id: "platform",
+            label: "Windows x64",
+            critical: true,
+            run: async () =>
+              process.platform === "win32" && process.arch === "x64"
+                ? { status: "pass", message: "系统受支持" }
+                : { status: "fail", message: "仅支持 Windows x64" },
+          },
+          {
+            id: "safe-storage",
+            label: "本机凭据保护",
+            critical: true,
+            run: async () =>
+              safeStorage.isEncryptionAvailable()
+                ? { status: "pass", message: "凭据保护可用" }
+                : { status: "fail", message: "Windows 凭据保护不可用" },
+          },
+          {
+            id: "session",
+            label: "登录状态",
+            critical: true,
+            run: async () =>
+              (await authController?.getRuntimeSession())
+                ? { status: "pass", message: "已登录" }
+                : { status: "fail", message: "请先登录 Host" },
+          },
+          {
+            id: "host-registration",
+            label: "Host 登记",
+            critical: true,
+            run: async () =>
+              desktopState.host
+                ? { status: "pass", message: "Host 已登记" }
+                : { status: "fail", message: "Host 尚未登记" },
+          },
+          {
+            id: "workspaces",
+            label: "项目目录",
+            critical: true,
+            run: async () =>
+              workspaceAuthorizer!.list().length > 0
+                ? { status: "pass", message: "已有授权项目" }
+                : { status: "fail", message: "请先授权项目目录" },
+          },
+          {
+            id: "codex-cli",
+            label: "Codex CLI",
+            critical: true,
+            run: async () => {
+              try {
+                const resolution = resolveCodexCli({
+                  isPackaged: app.isPackaged,
+                  resourcesPath: process.resourcesPath,
+                });
+                return {
+                  status: "pass",
+                  message: `版本 ${resolution.version}`,
+                };
+              } catch {
+                return { status: "fail", message: "固定版本 Codex CLI 不可用" };
+              }
+            },
+          },
+          {
+            id: "supabase",
+            label: "云端连接配置",
+            critical: true,
+            run: async () => ({ status: "pass", message: "公共配置可用" }),
+          },
+          {
+            id: "device",
+            label: "安卓设备",
+            critical: false,
+            run: async () => ({
+              status: "warning",
+              message: "设备状态需启动 Host 后检查",
+            }),
+          },
+          {
+            id: "app-server",
+            label: "Codex App Server",
+            critical: true,
+            run: async () => ({
+              status: "warning",
+              message: "启动 Host 时执行握手检查",
+            }),
+          },
+          {
+            id: "login-item",
+            label: "开机启动",
+            critical: false,
+            run: async () => ({
+              status: "pass",
+              message: "登录启动配置可读取",
+            }),
+          },
+          {
+            id: "notifications",
+            label: "通知配置",
+            critical: false,
+            run: async () =>
+              runtimeConfig!.webOrigin
+                ? { status: "pass", message: "通知地址可用" }
+                : { status: "warning", message: "未配置通知地址" },
+          },
+          {
+            id: "recent-errors",
+            label: "最近运行错误",
+            critical: false,
+            run: async () =>
+              desktopState.lastErrorCode
+                ? { status: "warning", message: "最近存在运行错误" }
+                : { status: "pass", message: "没有最近运行错误" },
+          },
+        ],
+      }).run();
+      if (configStore && localConfig) {
+        localConfig = { ...localConfig, doctorSummary: report.summary };
+        await configStore.write(localConfig);
+      }
+      if (report.criticalPassed) runtimeController?.markDoctorPassed();
+      const message =
+        report.summary.status === "passed"
+          ? "Doctor 检查通过"
+          : report.summary.status === "warning"
+            ? "Doctor 检查完成，存在提醒"
+            : "Doctor 检查发现问题，请先修复";
+      updateDesktopState({ ...desktopState, notice: message });
+      redactedLogger.info("doctor_completed", {
+        result: report.summary.status === "failed" ? "failed" : "succeeded",
+      });
+      return { ok: report.summary.status !== "failed", message };
+    },
     setOpenAtLogin: async ({ enabled }) => {
       if (!loginItemController.setEnabled(enabled)) {
         return { ok: false, message: "无法更新开机启动设置" };
@@ -326,13 +501,24 @@ if (!hasSingleInstanceLock) {
         message: enabled ? "已启用开机启动" : "已关闭开机启动",
       };
     },
-    openLogFolder: unavailableAction,
+    openLogFolder: async () => {
+      const logPath = path.join(app.getPath("userData"), "logs");
+      const error = await shell.openPath(logPath);
+      return error
+        ? { ok: false, message: "无法打开日志目录" }
+        : { ok: true, message: "已打开日志目录" };
+    },
     beginDataReset: () => dataResetHandlers.beginDataReset(),
     confirmDataReset: (input) => dataResetHandlers.confirmDataReset(input),
   };
 
-  app.on("before-quit", () => {
+  let isQuitting = false;
+  app.on("before-quit", (event) => {
     windowManager.prepareForShutdown();
+    if (isQuitting || !runtimeController) return;
+    event.preventDefault();
+    isQuitting = true;
+    void runtimeController.dispose().finally(() => app.quit());
   });
 
   app.on("second-instance", () => {
@@ -349,10 +535,17 @@ if (!hasSingleInstanceLock) {
       createDataResetController({ userDataDir: app.getPath("userData") }),
     );
     try {
-      const runtimeConfig = loadPublicRuntimeConfig({
+      runtimeConfig = loadPublicRuntimeConfig({
         source: process.env,
         isPackaged: app.isPackaged,
         resourcePath: path.join(process.resourcesPath, "public-runtime.json"),
+      });
+      threadStore = new RemoteThreadStore(
+        path.join(app.getPath("userData"), "remote-threads.v1.json"),
+      );
+      redactedLogger = createRedactedLogger({
+        directory: path.join(app.getPath("userData"), "logs"),
+        appVersion: app.getVersion(),
       });
       configStore = createConfigStore({
         filePath: path.join(app.getPath("userData"), "config.v1.json"),
@@ -381,7 +574,7 @@ if (!hasSingleInstanceLock) {
           await configStore.write(localConfig);
         },
         isWorkspaceInUse: (workspaceId) =>
-          activeTurnWorkspaceIds.has(workspaceId),
+          threadStore?.hasActiveTurn(workspaceId) ?? false,
       });
       const credentialStore = createCredentialStore({
         filePath: path.join(app.getPath("userData"), "credentials.v1.bin"),
@@ -408,19 +601,111 @@ if (!hasSingleInstanceLock) {
         version: app.getVersion(),
         protocolVersion: 1,
       });
-      pairingController = createPairingController({
-        isSignedIn: () => authController?.getSnapshot().signedIn === true,
-        isHostActive: () =>
-          desktopState.host !== undefined && desktopState.host !== null,
-        transport: {
-          isReady: () => pairingTransport?.isReady() === true,
-          createPairingRequest: async () => {
-            if (!pairingTransport) {
-              throw new Error("Pairing transport is unavailable");
-            }
-            return pairingTransport.createPairingRequest();
-          },
+      runtimeController = createHostRuntimeController({
+        loadPrerequisites: async () => {
+          const runtimeSession = await authController!.getRuntimeSession();
+          const keyPair = await hostKeyManager!.getOrCreate();
+          const hostPrivateKey = runtimeSession
+            ? await crypto.subtle.importKey(
+                "jwk",
+                keyPair.privateKeyJwk as JsonWebKey,
+                { name: "ECDH", namedCurve: "P-256" },
+                false,
+                ["deriveBits"],
+              )
+            : null;
+          return {
+            signedIn: runtimeSession !== null,
+            hostId: desktopState.host?.id ?? null,
+            hostName: desktopState.host?.name ?? "Windows Host",
+            ownerId: runtimeSession?.ownerId ?? null,
+            authSessionId: runtimeSession?.authSessionId ?? null,
+            accessToken: runtimeSession?.accessToken ?? null,
+            hostPrivateKey,
+            authorizedWorkspaces: workspaceAuthorizer!.list(),
+            activeRemoteTurns: () => threadStore?.activeTurnCount() ?? 0,
+            markRunningUnknown: () => threadStore?.markRunningUnknown(),
+          };
         },
+        resolveCodexCli: async () =>
+          resolveCodexCli({
+            isPackaged: app.isPackaged,
+            resourcesPath: process.resourcesPath,
+          }),
+        createCodexRuntime: async ({
+          executablePath,
+          authorizedWorkspaces,
+        }) => {
+          const processHandle = createCodexAppServerProcess(executablePath);
+          const adapter = new CodexAppServerAdapter(processHandle.client, {
+            authorizedWorkspaces,
+          });
+          return {
+            adapter,
+            initialize: async () => {
+              await adapter.initialize();
+            },
+            close: async () => {
+              processHandle.close();
+            },
+            onExit: (handler) => processHandle.onExit(() => handler()),
+            onError: (handler) => processHandle.onError(() => handler()),
+          };
+        },
+        createTransport: () =>
+          new SupabaseTransport(
+            asSupabaseTransportClient(authController!.getClient()),
+          ) as unknown as RuntimeTransport,
+        createRunner: ({
+          adapter,
+          transport,
+          hostId,
+          hostName,
+          hostPrivateKey,
+          authorizedWorkspaces,
+          notificationSink,
+        }) =>
+          new RemoteCommandRunner(transport as never, adapter, {
+            hostId,
+            hostName,
+            hostPrivateKey,
+            authorizedWorkspaces,
+            threadStore: threadStore!,
+            notificationSink,
+          }),
+        createNotificationSink: (session) =>
+          createRotatingWebhookNotificationSink({
+            endpoint: `${runtimeConfig!.webOrigin}/api/push/notify`,
+            accessToken: session.accessToken,
+          }),
+        schedule: (delayMs, task) => {
+          const timer = setTimeout(task, delayMs);
+          return () => clearTimeout(timer);
+        },
+        logger: redactedLogger!,
+      });
+      runtimeController.subscribe((runtime) => {
+        updateDesktopState({
+          ...desktopState,
+          ...runtimeStatePatch(),
+          hostStatus: runtime.phase,
+          runtimeReason: runtime.reason,
+          activeRemoteTurns: runtime.activeRemoteTurns,
+          lastObservedAt: runtime.lastObservedAt,
+          lastErrorCode: runtime.errorCode,
+        });
+      });
+      authController.onRuntimeSessionChanged((session) => {
+        if (!session) {
+          void runtimeController?.stop({ force: true });
+          return;
+        }
+        void runtimeController?.handleSessionChanged(session).catch(() => {
+          redactedLogger?.warn("session_refresh_failed", {
+            result: "failed",
+            errorCode: "transport_connect_failed",
+          });
+        });
       });
       await authController.restore();
       if (authController.getSnapshot().signedIn) {
@@ -474,7 +759,7 @@ if (!hasSingleInstanceLock) {
       callbacks: {
         openWindow: () => windowManager.show(),
         startHost: () => handlers.startHost(),
-        stopHost: () => handlers.stopHost(),
+        stopHost: () => handlers.stopHost({ force: false }),
         runDoctor: () => handlers.runDoctor(),
         setOpenAtLogin: (enabled) => handlers.setOpenAtLogin({ enabled }),
         exit: () => {

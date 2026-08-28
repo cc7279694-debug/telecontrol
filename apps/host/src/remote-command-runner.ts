@@ -6,6 +6,7 @@ import {
   type RemoteEnvelope,
   type RemoteEvent,
 } from "@codex-remote/protocol";
+import { randomUUID } from "node:crypto";
 import type {
   ApprovalResponse,
   AuthorizedWorkspace,
@@ -114,6 +115,36 @@ export class RemoteCommandRunner {
     this.removeNotificationHandler = adapter.onNotification((notification) => {
       void this.forwardNotification(notification);
     });
+  }
+
+  async publishAuthoritativeSnapshot(
+    linkedDevice: LinkedDevice,
+  ): Promise<void> {
+    const key = await deriveAesSessionKey(
+      this.options.hostPrivateKey,
+      parsePublicKey(linkedDevice.public_key),
+    );
+    const payload = {
+      type: "host.snapshot.result" as const,
+      requestMessageId: randomUUID(),
+      snapshot: this.mapper.hostSnapshot({
+        hostId: this.options.hostId,
+        name: this.options.hostName,
+        online: true,
+        workspaces: this.options.authorizedWorkspaces.map(({ id, name }) => ({
+          id,
+          name: name ?? id,
+        })),
+      }),
+    };
+    const envelope = await sealRemotePayload({
+      key,
+      hostId: this.options.hostId,
+      deviceId: linkedDevice.id,
+      payload,
+      ttlMs: 60_000,
+    });
+    await this.transport.sendEvent(envelope);
   }
 
   start(): void {
@@ -463,6 +494,19 @@ export class RemoteCommandRunner {
     }
     const status = this.mapper.turnStatus(notification);
     if (status) {
+      if (status.status === "inProgress") {
+        this.options.threadStore.updateState(
+          status.threadId,
+          "running",
+          status.turnId,
+        );
+      } else if (
+        status.status === "completed" ||
+        status.status === "failed" ||
+        status.status === "interrupted"
+      ) {
+        this.options.threadStore.updateState(status.threadId, "idle");
+      }
       await this.sendResponse(session.key, session.deviceId, {
         type: "turn.status",
         requestMessageId: session.requestMessageId,
