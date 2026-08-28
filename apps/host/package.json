@@ -10,7 +10,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.desktop.json --noEmit && tsc -p tsconfig.renderer.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test:e2e": "playwright test",
     "generate-public-runtime": "tsx scripts/generate-public-runtime.ts",
-    "package:win": "npm run build && npm run generate-public-runtime && electron-builder --win --x64"
+    "package:prepare": "tsx scripts/prepare-codex-resource.ts",
+    "package:dir": "npm run build && npm run generate-public-runtime && npm run package:prepare && electron-builder --config electron-builder.yml --dir --win --x64",
+    "package:win": "npm run build && npm run generate-public-runtime && npm run package:prepare && electron-builder --config electron-builder.yml --win nsis --x64",
+    "package:verify": "tsx scripts/verify-package.ts"
   },
   "dependencies": {
     "@openai/codex": "0.149.0",
@@ -34,22 +37,12 @@
     "@types/react": "19.2.11",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.1.0",
+    "@electron/asar": "3.4.1",
+    "@playwright/test": "1.62.1",
     "electron": "44.0.0",
     "electron-builder": "26.15.3",
     "jsdom": "30.0.1",
+    "playwright": "1.62.1",
     "vite": "8.2.2"
-  },
-  "build": {
-    "appId": "com.codexremote.host",
-    "files": [
-      "dist/**/*",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "public-runtime.json",
-        "to": "public-runtime.json"
-      }
-    ]
   }
 }

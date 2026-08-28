@@ -1,0 +1,30 @@
+appId: com.codexremote.host
+productName: Codex Remote Host
+asar: true
+directories:
+  output: release
+files:
+  - dist/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/*.test.*"
+extraResources:
+  - from: public-runtime.json
+    to: public-runtime.json
+  - from: .package-resources/codex
+    to: codex
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: ../web/public/icons/icon-512.png
+  requestedExecutionLevel: asInvoker
+  artifactName: Codex-Remote-Host-${version}-Windows-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
