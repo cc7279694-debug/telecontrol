@@ -147,6 +147,33 @@ export class RemoteCommandRunner {
     await this.transport.sendEvent(envelope);
   }
 
+  async reconcileRecoverable(): Promise<void> {
+    for (const entry of this.options.threadStore.listRecoverable()) {
+      try {
+        const snapshot = await this.adapter.readThread({
+          workspaceId: entry.workspaceId,
+          threadId: entry.threadId,
+        });
+        const mapped = this.mapper.threadSnapshot(snapshot, {
+          workspaceId: entry.workspaceId,
+          readOnly: false,
+        });
+        if (mapped.state === "running") {
+          this.options.threadStore.markHostOwned(
+            mapped.id,
+            mapped.workspaceId,
+            "running",
+            mapped.activeTurnId,
+          );
+        } else if (mapped.state === "idle") {
+          this.options.threadStore.updateState(mapped.id, "idle");
+        }
+      } catch {
+        // Keep the thread unknown when the authoritative state cannot be read.
+      }
+    }
+  }
+
   start(): void {
     if (this.running) {
       return;

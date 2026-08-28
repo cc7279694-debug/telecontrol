@@ -7,6 +7,7 @@ import type {
 import type {
   LinkedDevice,
   PairingRequest,
+  SupabaseTransportStatus,
   TransportContext,
 } from "../supabase-transport.js";
 import type { RuntimeSession } from "./supabase-auth-controller.js";
@@ -57,6 +58,7 @@ export type RuntimePrerequisites = {
   authorizedWorkspaces: AuthorizedWorkspace[];
   activeRemoteTurns: () => number;
   markRunningUnknown: () => void;
+  subscribeActivity?: (handler: () => void) => () => void;
 };
 
 export type CodexRuntimeInput = {
@@ -78,6 +80,9 @@ export type RuntimeTransport = {
   connect: (context: TransportContext) => Promise<void>;
   disconnect: () => Promise<void>;
   heartbeat: () => Promise<void>;
+  subscribeStatus: (
+    handler: (status: SupabaseTransportStatus) => void,
+  ) => () => void;
   refreshAccessToken: (accessToken: string) => Promise<void>;
   createPairingRequest: () => Promise<PairingRequest>;
 };
@@ -86,6 +91,7 @@ export type RuntimeRunner = {
   start: () => void;
   stop: () => void;
   publishAuthoritativeSnapshot: (device: LinkedDevice) => Promise<void>;
+  reconcileRecoverable: () => Promise<void>;
 };
 
 export type CancelSchedule = () => void;
@@ -123,6 +129,7 @@ export type HostRuntimeController = {
   handleNetworkOnline: () => Promise<void>;
   handleSystemResume: () => Promise<void>;
   markDoctorPassed: () => void;
+  checkAppServer: () => Promise<void>;
   getSnapshot: () => HostRuntimeSnapshot;
   subscribe: (handler: (snapshot: HostRuntimeSnapshot) => void) => () => void;
   dispose: () => Promise<void>;
@@ -138,6 +145,8 @@ const initialSnapshot: HostRuntimeSnapshot = {
 };
 
 const restartDelays = [1_000, 2_000, 4_000] as const;
+const heartbeatIntervalMs = 10_000;
+const transportReconnectDelayMs = 5_000;
 
 export function createHostRuntimeController(
   ports: HostRuntimePorts,
@@ -154,10 +163,15 @@ export function createHostRuntimeController(
   let startPromise: Promise<RuntimeActionResult> | undefined;
   let pairingPollCancel: CancelSchedule | undefined;
   let restartCancel: CancelSchedule | undefined;
+  let heartbeatCancel: CancelSchedule | undefined;
+  let transportReconnectCancel: CancelSchedule | undefined;
+  let removeTransportStatusListener: (() => void) | undefined;
+  let removeActivityListener: (() => void) | undefined;
   let pairingExpiresAt: string | undefined;
   let doctorPassed = false;
   let disposed = false;
   let intentionalClose = false;
+  let reconnecting = false;
   const subscribers = new Set<(value: HostRuntimeSnapshot) => void>();
 
   function activeRemoteTurns() {
@@ -209,7 +223,19 @@ export function createHostRuntimeController(
     restartCancel = undefined;
   }
 
+  function cancelHeartbeat() {
+    heartbeatCancel?.();
+    heartbeatCancel = undefined;
+  }
+
+  function cancelTransportReconnect() {
+    transportReconnectCancel?.();
+    transportReconnectCancel = undefined;
+  }
+
   async function closeConnectedResources() {
+    cancelHeartbeat();
+    cancelTransportReconnect();
     const activeRunner = runner;
     runner = undefined;
     activeRunner?.stop();
@@ -226,6 +252,8 @@ export function createHostRuntimeController(
     removeCodexErrorListener?.();
     removeCodexExitListener = undefined;
     removeCodexErrorListener = undefined;
+    removeTransportStatusListener?.();
+    removeTransportStatusListener = undefined;
     if (activeCodex) await activeCodex.close().catch(() => undefined);
   }
 
@@ -261,6 +289,7 @@ export function createHostRuntimeController(
       authorizedWorkspaces: prerequisites.authorizedWorkspaces,
       notificationSink,
     });
+    await nextRunner.reconcileRecoverable();
     await nextRunner.publishAuthoritativeSnapshot(device);
     nextRunner.start();
     runner = nextRunner;
@@ -270,6 +299,113 @@ export function createHostRuntimeController(
       reason: null,
       errorCode: null,
       appServerRestartAttempt: 0,
+    });
+    scheduleHeartbeat();
+  }
+
+  function scheduleHeartbeat() {
+    cancelHeartbeat();
+    if (disposed || !transport || !runner || snapshot.phase !== "running") {
+      return;
+    }
+    heartbeatCancel = ports.schedule(heartbeatIntervalMs, () => {
+      heartbeatCancel = undefined;
+      void sendHeartbeat();
+    });
+  }
+
+  async function sendHeartbeat() {
+    if (
+      disposed ||
+      !transport ||
+      !runner ||
+      snapshot.phase === "stopped" ||
+      snapshot.phase === "stopping"
+    ) {
+      return;
+    }
+    try {
+      await transport.heartbeat();
+      scheduleHeartbeat();
+    } catch {
+      handleTransportOffline();
+    }
+  }
+
+  function scheduleTransportReconnect() {
+    if (
+      transportReconnectCancel ||
+      disposed ||
+      intentionalClose ||
+      snapshot.phase === "stopped" ||
+      snapshot.phase === "stopping"
+    ) {
+      return;
+    }
+    transportReconnectCancel = ports.schedule(transportReconnectDelayMs, () => {
+      transportReconnectCancel = undefined;
+      void reconnectTransport();
+    });
+  }
+
+  function handleTransportOffline() {
+    if (
+      disposed ||
+      intentionalClose ||
+      reconnecting ||
+      snapshot.phase === "stopped" ||
+      snapshot.phase === "stopping"
+    ) {
+      return;
+    }
+    cancelHeartbeat();
+    runner?.stop();
+    runner = undefined;
+    publish({
+      phase: "degraded",
+      reason: "transport-offline",
+      errorCode: "transport_connect_failed",
+    });
+    scheduleTransportReconnect();
+  }
+
+  function installTransportStatusListener(nextTransport: RuntimeTransport) {
+    removeTransportStatusListener?.();
+    removeTransportStatusListener = nextTransport.subscribeStatus((status) => {
+      if (status === "offline") handleTransportOffline();
+    });
+  }
+
+  function installActivityListener(nextPrerequisites: RuntimePrerequisites) {
+    removeActivityListener?.();
+    removeActivityListener = nextPrerequisites.subscribeActivity?.(() => {
+      publish({});
+    });
+  }
+
+  function scheduleCodexRestart(
+    nextAttempt: number,
+    errorCode: RuntimeErrorCode,
+  ) {
+    if (nextAttempt > restartDelays.length) {
+      publish({
+        phase: "error",
+        reason: "doctor-required",
+        errorCode,
+        appServerRestartAttempt: nextAttempt,
+      });
+      return;
+    }
+    publish({
+      phase: "degraded",
+      reason: "codex-restarting",
+      errorCode,
+      appServerRestartAttempt: nextAttempt,
+    });
+    cancelRestart();
+    restartCancel = ports.schedule(restartDelays[nextAttempt - 1]!, () => {
+      restartCancel = undefined;
+      void start();
     });
   }
 
@@ -302,6 +438,7 @@ export function createHostRuntimeController(
       return { ok: false, message: "无法读取 Host 配置" };
     }
     prerequisites = loaded;
+    installActivityListener(loaded);
     if (!loaded.signedIn) {
       publish({ phase: "error", reason: null, errorCode: "not_signed_in" });
       return { ok: false, message: "请先登录 Host" };
@@ -331,6 +468,7 @@ export function createHostRuntimeController(
       return { ok: false, message: "请先授权至少一个项目目录" };
     }
 
+    const restarting = snapshot.reason === "codex-restarting";
     publish({ phase: "starting", reason: null, errorCode: null });
     currentSession = {
       accessToken: loaded.accessToken!,
@@ -346,6 +484,7 @@ export function createHostRuntimeController(
       installCodexListeners(codex);
       await codex.initialize();
       transport = ports.createTransport(currentSession);
+      installTransportStatusListener(transport);
       transport.setPairingHostId(loaded.hostId);
       const device = await transport.findActiveLinkedDevice(loaded.hostId);
       if (!device) {
@@ -364,7 +503,11 @@ export function createHostRuntimeController(
           ? "codex_initialize_failed"
           : runtimeErrorCode(error);
       await closeConnectedResources();
-      publish({ phase: "error", reason: null, errorCode });
+      if (restarting) {
+        scheduleCodexRestart(snapshot.appServerRestartAttempt + 1, errorCode);
+      } else {
+        publish({ phase: "error", reason: null, errorCode });
+      }
       ports.logger.error("host_runtime_start_failed", { errorCode });
       return { ok: false, message: "Host 启动失败，请运行 Doctor" };
     }
@@ -440,9 +583,14 @@ export function createHostRuntimeController(
     ) {
       return;
     }
+    if (reconnecting) return;
+    reconnecting = true;
+    cancelTransportReconnect();
+    cancelHeartbeat();
     runner?.stop();
     runner = undefined;
     try {
+      await transport.disconnect();
       const device = await transport.findActiveLinkedDevice(
         prerequisites.hostId,
       );
@@ -461,6 +609,9 @@ export function createHostRuntimeController(
         reason: "transport-offline",
         errorCode: "transport_connect_failed",
       });
+      scheduleTransportReconnect();
+    } finally {
+      reconnecting = false;
     }
   }
 
@@ -489,26 +640,10 @@ export function createHostRuntimeController(
     if (intentionalClose || disposed || snapshot.phase === "stopped") return;
     prerequisites?.markRunningUnknown();
     await closeConnectedResources();
-    const nextAttempt = snapshot.appServerRestartAttempt + 1;
-    if (nextAttempt > restartDelays.length) {
-      publish({
-        phase: "error",
-        reason: "doctor-required",
-        errorCode: "app_server_exited",
-        appServerRestartAttempt: nextAttempt,
-      });
-      return;
-    }
-    publish({
-      phase: "degraded",
-      reason: "codex-restarting",
-      errorCode: "app_server_exited",
-      appServerRestartAttempt: nextAttempt,
-    });
-    restartCancel = ports.schedule(restartDelays[nextAttempt - 1]!, () => {
-      restartCancel = undefined;
-      void start();
-    });
+    scheduleCodexRestart(
+      snapshot.appServerRestartAttempt + 1,
+      "app_server_exited",
+    );
   }
 
   async function stop(input: { force: boolean }): Promise<RuntimeActionResult> {
@@ -523,6 +658,8 @@ export function createHostRuntimeController(
     cancelRestart();
     publish({ phase: "stopping", reason: null, errorCode: null });
     await closeConnectedResources();
+    removeActivityListener?.();
+    removeActivityListener = undefined;
     currentSession = undefined;
     prerequisites = undefined;
     intentionalClose = false;
@@ -547,6 +684,20 @@ export function createHostRuntimeController(
     }
   }
 
+  async function checkAppServer(): Promise<void> {
+    const loaded = prerequisites ?? (await ports.loadPrerequisites());
+    const resolution = await ports.resolveCodexCli();
+    const runtime = await ports.createCodexRuntime({
+      executablePath: resolution.executablePath,
+      authorizedWorkspaces: loaded.authorizedWorkspaces,
+    });
+    try {
+      await runtime.initialize();
+    } finally {
+      await runtime.close();
+    }
+  }
+
   function subscribe(handler: (value: HostRuntimeSnapshot) => void) {
     subscribers.add(handler);
     return () => subscribers.delete(handler);
@@ -567,6 +718,7 @@ export function createHostRuntimeController(
     handleNetworkOnline: reconnectTransport,
     handleSystemResume: reconnectTransport,
     markDoctorPassed,
+    checkAppServer,
     getSnapshot: () => ({
       ...snapshot,
       activeRemoteTurns: activeRemoteTurns(),

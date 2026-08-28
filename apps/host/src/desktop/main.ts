@@ -6,6 +6,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  powerMonitor,
   protocol,
   safeStorage,
   shell,
@@ -439,10 +440,14 @@ if (!hasSingleInstanceLock) {
             id: "app-server",
             label: "Codex App Server",
             critical: true,
-            run: async () => ({
-              status: "warning",
-              message: "启动 Host 时执行握手检查",
-            }),
+            run: async () => {
+              try {
+                await runtimeController?.checkAppServer();
+                return { status: "pass", message: "App Server 握手成功" };
+              } catch {
+                return { status: "fail", message: "App Server 握手失败" };
+              }
+            },
           },
           {
             id: "login-item",
@@ -625,6 +630,8 @@ if (!hasSingleInstanceLock) {
             authorizedWorkspaces: workspaceAuthorizer!.list(),
             activeRemoteTurns: () => threadStore?.activeTurnCount() ?? 0,
             markRunningUnknown: () => threadStore?.markRunningUnknown(),
+            subscribeActivity: (handler) =>
+              threadStore?.subscribe(handler) ?? (() => undefined),
           };
         },
         resolveCodexCli: async () =>
@@ -694,6 +701,9 @@ if (!hasSingleInstanceLock) {
           lastObservedAt: runtime.lastObservedAt,
           lastErrorCode: runtime.errorCode,
         });
+      });
+      powerMonitor?.on("resume", () => {
+        void runtimeController?.handleSystemResume();
       });
       authController.onRuntimeSessionChanged((session) => {
         if (!session) {

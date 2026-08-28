@@ -43,11 +43,17 @@ function createFixture({
     task: () => void;
     cancelled: boolean;
   }> = [];
+  const transportStatusHandlers = new Set<
+    (status: "connected" | "offline") => void
+  >();
   const runner = {
     start: vi.fn(() => order.push("runner.start")),
     stop: vi.fn(() => order.push("runner.stop")),
     publishAuthoritativeSnapshot: vi.fn(async () => {
       order.push("runner.snapshot");
+    }),
+    reconcileRecoverable: vi.fn(async () => {
+      order.push("runner.reconcile");
     }),
   };
   const transport = {
@@ -62,6 +68,12 @@ function createFixture({
     heartbeat: vi.fn(async () => {
       order.push("transport.heartbeat");
     }),
+    subscribeStatus: vi.fn(
+      (handler: (status: "connected" | "offline") => void) => {
+        transportStatusHandlers.add(handler);
+        return () => transportStatusHandlers.delete(handler);
+      },
+    ),
     refreshAccessToken: vi.fn(async () => {
       order.push("transport.refresh");
     }),
@@ -132,6 +144,9 @@ function createFixture({
     order,
     schedules,
     triggerCodexExit: () => exitHandler(),
+    triggerTransportOffline: () => {
+      for (const handler of transportStatusHandlers) handler("offline");
+    },
   };
 }
 
@@ -195,6 +210,7 @@ describe("HostRuntimeController", () => {
       "codex.initialize",
       "transport.connect",
       "transport.heartbeat",
+      "runner.reconcile",
       "runner.snapshot",
       "runner.start",
     ]);
@@ -306,7 +322,13 @@ describe("HostRuntimeController", () => {
     await fixture.controller.start();
 
     fixture.triggerCodexExit();
-    await vi.waitFor(() => expect(fixture.schedules[0]?.delayMs).toBe(1_000));
+    await vi.waitFor(() =>
+      expect(
+        fixture.schedules.some(
+          (entry) => entry.delayMs === 1_000 && !entry.cancelled,
+        ),
+      ).toBe(true),
+    );
 
     expect(fixture.controller.getSnapshot()).toMatchObject({
       phase: "degraded",
@@ -315,5 +337,89 @@ describe("HostRuntimeController", () => {
       appServerRestartAttempt: 1,
     });
     expect(fixture.ports.loadPrerequisites).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the Host presence alive with recurring heartbeats", async () => {
+    const fixture = createFixture();
+    await fixture.controller.start();
+
+    const heartbeatSchedule = fixture.schedules.find(
+      (entry) => entry.delayMs === 10_000 && !entry.cancelled,
+    );
+    expect(heartbeatSchedule).toBeDefined();
+
+    heartbeatSchedule?.task();
+    await vi.waitFor(() =>
+      expect(fixture.transport.heartbeat).toHaveBeenCalledTimes(2),
+    );
+  });
+
+  it("retries a failed App Server restart with the next backoff", async () => {
+    const fixture = createFixture();
+    await fixture.controller.start();
+    vi.mocked(fixture.ports.createCodexRuntime).mockRejectedValueOnce(
+      new Error("initialize failed"),
+    );
+
+    fixture.triggerCodexExit();
+    await vi.waitFor(() =>
+      expect(
+        fixture.schedules.some(
+          (entry) => entry.delayMs === 1_000 && !entry.cancelled,
+        ),
+      ).toBe(true),
+    );
+    fixture.schedules
+      .find((entry) => entry.delayMs === 1_000 && !entry.cancelled)
+      ?.task();
+
+    await vi.waitFor(() =>
+      expect(fixture.ports.createCodexRuntime).toHaveBeenCalledTimes(2),
+    );
+    await vi.waitFor(() =>
+      expect(
+        fixture.schedules.some(
+          (entry) => entry.delayMs === 2_000 && !entry.cancelled,
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("reconnects when the transport reports a closed channel", async () => {
+    const fixture = createFixture();
+    await fixture.controller.start();
+
+    fixture.triggerTransportOffline();
+
+    expect(fixture.controller.getSnapshot()).toMatchObject({
+      phase: "degraded",
+      reason: "transport-offline",
+    });
+    expect(
+      fixture.schedules.some(
+        (entry) => entry.delayMs === 5_000 && !entry.cancelled,
+      ),
+    ).toBe(true);
+  });
+
+  it("reconciles Host-owned running threads after reconnecting", async () => {
+    const fixture = createFixture();
+    await fixture.controller.start();
+
+    expect(fixture.runner.reconcileRecoverable).toHaveBeenCalledOnce();
+  });
+
+  it("provides an independent App Server check for Doctor", async () => {
+    const fixture = createFixture();
+    const controller = fixture.controller as typeof fixture.controller & {
+      checkAppServer: () => Promise<void>;
+    };
+
+    await controller.checkAppServer();
+
+    expect(fixture.ports.resolveCodexCli).toHaveBeenCalledOnce();
+    expect(fixture.ports.createCodexRuntime).toHaveBeenCalledOnce();
+    expect(fixture.codex.initialize).toHaveBeenCalledOnce();
+    expect(fixture.codex.close).toHaveBeenCalledOnce();
   });
 });

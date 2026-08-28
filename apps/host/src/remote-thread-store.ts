@@ -25,6 +25,7 @@ interface PersistedStore {
 
 export class RemoteThreadStore {
   private readonly threads = new Map<string, RemoteThreadOwnership>();
+  private readonly subscribers = new Set<() => void>();
 
   constructor(private readonly filePath?: string) {
     this.load();
@@ -65,6 +66,11 @@ export class RemoteThreadStore {
           (entry.state === "running" || entry.state === "unknown"),
       )
       .map((entry) => ({ ...entry }));
+  }
+
+  subscribe(handler: () => void): () => void {
+    this.subscribers.add(handler);
+    return () => this.subscribers.delete(handler);
   }
 
   markRunningUnknown(): void {
@@ -123,6 +129,7 @@ export class RemoteThreadStore {
   private set(entry: RemoteThreadOwnership): void {
     this.threads.set(entry.threadId, entry);
     this.persist();
+    for (const subscriber of this.subscribers) subscriber();
   }
 
   private load(): void {

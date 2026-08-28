@@ -152,6 +152,28 @@ async function createRunner(
 }
 
 describe("RemoteCommandRunner", () => {
+  it("reconciles an unknown Host thread from the App Server snapshot", async () => {
+    const result = await createRunner(
+      {
+        type: "thread.read",
+        workspaceId: "workspace-1",
+        threadId: "thread-1",
+      },
+      (store) => store.markHostOwned("thread-1", "workspace-1", "unknown"),
+    );
+
+    await result.runner.reconcileRecoverable();
+
+    expect(result.adapter.readThread).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      threadId: "thread-1",
+    });
+    expect(result.store.get("thread-1")).toMatchObject({
+      owner: "host",
+      state: "idle",
+    });
+  });
+
   it("dispatches turn.start only for a Host-owned thread and completes it", async () => {
     const { runner, transport, adapter } = await createRunner(
       {

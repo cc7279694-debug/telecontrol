@@ -18,6 +18,7 @@ class FakeChannel implements SupabaseTransportChannel {
   subscribed = false;
   unsubscribed = false;
   readonly sentMessages: unknown[] = [];
+  private statusHandler: ((status: string) => void) | undefined;
 
   constructor(topic: string, options: Record<string, unknown>) {
     this.topic = topic;
@@ -34,6 +35,7 @@ class FakeChannel implements SupabaseTransportChannel {
   }
 
   subscribe(callback: (status: string) => void): SupabaseTransportChannel {
+    this.statusHandler = callback;
     this.subscribed = true;
     callback("SUBSCRIBED");
     return this;
@@ -51,6 +53,10 @@ class FakeChannel implements SupabaseTransportChannel {
 
   pushBroadcast(payload: unknown): void {
     this.handlers.get("broadcast:host.event")?.(payload);
+  }
+
+  pushStatus(status: string): void {
+    this.statusHandler?.(status);
   }
 }
 
@@ -485,5 +491,22 @@ describe("SupabaseTransport", () => {
 
     expect(events).toEqual([{ type: "stream.delta", sequence: 1 }]);
     expect(channel.unsubscribed).toBe(true);
+  });
+
+  it("reports later Realtime channel failures to the Host runtime", async () => {
+    const client = new FakeClient();
+    const transport = new SupabaseTransport(client);
+    const statuses: string[] = [];
+    transport.subscribeStatus((status) => statuses.push(status));
+
+    await transport.connect({
+      hostId: "host-1",
+      deviceId: "device-1",
+      ownerId: "owner-1",
+      leaseOwner: "host-process-1",
+    });
+    client.lastChannel?.pushStatus("CHANNEL_ERROR");
+
+    expect(statuses).toEqual(["connected", "offline"]);
   });
 });

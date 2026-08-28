@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RemoteThreadStore } from "./remote-thread-store.js";
 
 const temporaryDirectories: string[] = [];
@@ -13,6 +13,15 @@ afterEach(() => {
 });
 
 describe("RemoteThreadStore", () => {
+  it("notifies subscribers when activity changes", () => {
+    const store = new RemoteThreadStore();
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.markHostOwned("thread-1", "workspace-1", "running", "turn-1");
+
+    expect(listener).toHaveBeenCalledOnce();
+  });
   it("persists only thread ownership and running state", () => {
     const directory = mkdtempSync(join(tmpdir(), "codex-remote-store-"));
     temporaryDirectories.push(directory);

@@ -95,6 +95,8 @@ export interface HostPresence {
   observedAt: string;
 }
 
+export type SupabaseTransportStatus = "connected" | "offline";
+
 export interface PairingRequest {
   pairingId: string;
   code: string;
@@ -113,6 +115,9 @@ const PRESENCE_WINDOW_MS = 30_000;
 
 export class SupabaseTransport {
   private readonly handlers = new Set<HostEventHandler>();
+  private readonly statusHandlers = new Set<
+    (status: SupabaseTransportStatus) => void
+  >();
   private context: TransportContext | undefined;
   private channel: SupabaseTransportChannel | undefined;
   private pairingHostId: string | undefined;
@@ -140,12 +145,14 @@ export class SupabaseTransport {
     await new Promise<void>((resolve, reject) => {
       channel.subscribe((status) => {
         if (status === "SUBSCRIBED") {
+          this.emitStatus("connected");
           resolve();
         } else if (
           status === "CHANNEL_ERROR" ||
           status === "TIMED_OUT" ||
           status === "CLOSED"
         ) {
+          this.emitStatus("offline");
           reject(new Error(`Supabase channel subscription failed: ${status}`));
         }
       });
@@ -230,6 +237,13 @@ export class SupabaseTransport {
   subscribe(handler: HostEventHandler): () => void {
     this.handlers.add(handler);
     return () => this.handlers.delete(handler);
+  }
+
+  subscribeStatus(
+    handler: (status: SupabaseTransportStatus) => void,
+  ): () => void {
+    this.statusHandlers.add(handler);
+    return () => this.statusHandlers.delete(handler);
   }
 
   async sendEvent(envelope: RemoteEnvelope): Promise<void> {
@@ -445,6 +459,10 @@ export class SupabaseTransport {
     for (const handler of this.handlers) {
       handler(event);
     }
+  }
+
+  private emitStatus(status: SupabaseTransportStatus): void {
+    for (const handler of this.statusHandlers) handler(status);
   }
 
   private unwrapBroadcastPayload(payload: unknown): unknown {
