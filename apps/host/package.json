@@ -14,7 +14,8 @@
     "package:prepare": "tsx scripts/prepare-codex-resource.ts",
     "package:dir": "npm run build && npm run generate-public-runtime && npm run package:prepare && electron-builder --config electron-builder.yml --dir --win --x64",
     "package:win": "npm run build && npm run generate-public-runtime && npm run package:prepare && electron-builder --config electron-builder.yml --win nsis --x64",
-    "package:verify": "tsx scripts/verify-package.ts"
+    "package:verify": "tsx scripts/verify-package.ts",
+    "package:smoke": "tsx scripts/smoke-unpacked-host.ts"
   },
   "dependencies": {
     "@openai/codex": "0.149.0",
