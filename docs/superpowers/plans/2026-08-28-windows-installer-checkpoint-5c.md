@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - 本计划只实现 Checkpoint 5C；不修改 Hosted Supabase、Vercel、VAPID、Preview、Production 或手机真实数据。
-- Windows 应用只在当前用户会话运行，安装器使用 `asInvoker` 和 `perMachine: false`；不创建管理员服务、入站端口、防火墙规则或计划任务。
+- Windows 应用只在当前用户会话运行，NSIS 使用 `oneClick: true`、`perMachine: false` 和 `asInvoker` 强制当前用户安装；不提供可切换到所有用户的安装页，不创建管理员服务、入站端口、防火墙规则或计划任务。
 - 不修改睡眠、休眠、电源计划、代理、VPN、Codex 登录或用户项目。
 - 产品名固定为 `Codex Remote Host`，`appId` 固定为 `com.codexremote.host`，版本沿用 `apps/host/package.json` 的 `0.1.0`。
 - Codex CLI 固定为 `@openai/codex@0.149.0` 和 `@openai/codex-win32-x64@0.149.0-win32-x64`；复制完整 `vendor`，不能只复制 `codex.exe`。
@@ -83,9 +83,9 @@ expect(builderConfig).toContain("productName: Codex Remote Host");
 expect(builderConfig).toContain("target: nsis");
 expect(builderConfig).toContain("- x64");
 expect(builderConfig).toContain("requestedExecutionLevel: asInvoker");
-expect(builderConfig).toContain("oneClick: false");
+expect(builderConfig).toContain("oneClick: true");
 expect(builderConfig).toContain("perMachine: false");
-expect(builderConfig).toContain("allowToChangeInstallationDirectory: true");
+expect(builderConfig).not.toContain("allowToChangeInstallationDirectory");
 expect(builderConfig).toContain("deleteAppDataOnUninstall: false");
 expect(hostPackage.scripts).toMatchObject({
   "package:prepare": expect.any(String),
@@ -238,7 +238,7 @@ Resolve the installed package paths with `createRequire(import.meta.url)`. Valid
 
 - [ ] **Step 4: Add the electron-builder configuration**
 
-Use the following policy:
+Use the following policy. Because current-user installation is mandatory, this is a one-click per-user installer: it does not expose a custom installation-directory page or an all-users choice.
 
 ```yaml
 appId: com.codexremote.host
@@ -265,9 +265,8 @@ win:
   requestedExecutionLevel: asInvoker
   artifactName: Codex-Remote-Host-${version}-Windows-${arch}.${ext}
 nsis:
-  oneClick: false
+  oneClick: true
   perMachine: false
-  allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   deleteAppDataOnUninstall: false
@@ -601,7 +600,7 @@ After authorization, perform exactly one manual cycle: install → launch → tr
 - Complete Codex Windows `vendor` resources remain outside ASAR.
 - Public runtime config has four allowed fields and no private values.
 - Test fixtures cannot activate when `app.isPackaged` is true.
-- NSIS is x64, asInvoker, current-user and retains userData on uninstall.
+- NSIS is x64, one-click, asInvoker, current-user and retains userData on uninstall.
 - No auto-update, service, inbound port, firewall, power, proxy or VPN change exists.
 - Static package audit, unpacked smoke and Electron UI tests are separate gates.
 - Manual installation remains an explicit user-authorization boundary.

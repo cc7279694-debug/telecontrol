@@ -23,9 +23,9 @@ describe("Windows installer package policy", () => {
     expect(builderConfig).toContain("target: nsis");
     expect(builderConfig).toContain("- x64");
     expect(builderConfig).toContain("requestedExecutionLevel: asInvoker");
-    expect(builderConfig).toContain("oneClick: false");
+    expect(builderConfig).toContain("oneClick: true");
     expect(builderConfig).toContain("perMachine: false");
-    expect(builderConfig).toContain("allowToChangeInstallationDirectory: true");
+    expect(builderConfig).not.toContain("allowToChangeInstallationDirectory");
     expect(builderConfig).toContain("deleteAppDataOnUninstall: false");
   });
 
@@ -50,6 +50,9 @@ describe("Windows installer package policy", () => {
       playwright: "1.62.1",
     });
     expect(hostPackage.devDependencies).not.toHaveProperty("electron-updater");
+    expect(hostPackage.scripts?.["test:e2e"]).toBe(
+      "playwright test --config playwright.config.ts",
+    );
 
     const packageWin = hostPackage.scripts?.["package:win"] ?? "";
     expect(packageWin.indexOf("npm run build")).toBeGreaterThanOrEqual(0);
