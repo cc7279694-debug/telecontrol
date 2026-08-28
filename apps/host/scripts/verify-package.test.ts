@@ -39,8 +39,9 @@ function makePe(machine: number): Buffer {
 
 async function createFixture(options: {
   appAsarFiles?: Record<string, string | Buffer | undefined>;
-  resourceFiles?: Record<string, string | Buffer>;
+  resourceFiles?: Record<string, string | Buffer | undefined>;
   runtimeConfig?: Record<string, unknown>;
+  runtimeConfigRaw?: string;
   installerName?: string;
   installerMachine?: number;
   forbiddenReleasePath?: string;
@@ -98,6 +99,7 @@ async function createFixture(options: {
     ...(options.resourceFiles ?? {}),
   };
   for (const [relativePath, content] of Object.entries(resourceFiles)) {
+    if (content === undefined) continue;
     const filePath = join(codexDir, relativePath);
     mkdirSync(join(filePath, ".."), { recursive: true });
     writeFileSync(filePath, content);
@@ -106,14 +108,15 @@ async function createFixture(options: {
   writeFileSync(join(unpackedDir, "Codex Remote Host.exe"), makeX64Pe());
   writeFileSync(
     join(resourcesDir, "public-runtime.json"),
-    JSON.stringify(
-      options.runtimeConfig ?? {
-        supabaseUrl: "http://127.0.0.1:54321",
-        publishableKey: "public-key",
-        webOrigin: "http://127.0.0.1:3000",
-        protocolVersion: 1,
-      },
-    ),
+    options.runtimeConfigRaw ??
+      JSON.stringify(
+        options.runtimeConfig ?? {
+          supabaseUrl: "http://127.0.0.1:54321",
+          publishableKey: "public-key",
+          webOrigin: "http://127.0.0.1:3000",
+          protocolVersion: 1,
+        },
+      ),
   );
 
   if (options.forbiddenReleasePath) {
@@ -183,13 +186,29 @@ describe("Windows Host package verification", () => {
     ).rejects.toThrow();
   });
 
-  it("rejects missing or mismatched Codex resources", async () => {
+  it("rejects mismatched Codex metadata", async () => {
     const fixture = await createFixture({
       resourceFiles: {
         "codex-cli-package.json": JSON.stringify({
           name: "@openai/codex",
           version: "0.148.0",
         }),
+      },
+    });
+
+    await expect(
+      verifyPackage({
+        releaseDir: fixture.releaseDir,
+        expectedVersion: EXPECTED_VERSION,
+        requireInstaller: true,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects a missing Codex helper resource", async () => {
+    const fixture = await createFixture({
+      resourceFiles: {
+        "vendor/x86_64-pc-windows-msvc/codex-path/rg.exe": undefined,
       },
     });
 
@@ -272,7 +291,19 @@ describe("Windows Host package verification", () => {
     ).resolves.toMatchObject({ architecture: "x64" });
   });
 
-  it("rejects malformed public runtime config and unknown keys", async () => {
+  it("rejects malformed public runtime config", async () => {
+    const fixture = await createFixture({ runtimeConfigRaw: "{" });
+
+    await expect(
+      verifyPackage({
+        releaseDir: fixture.releaseDir,
+        expectedVersion: EXPECTED_VERSION,
+        requireInstaller: true,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects unknown public runtime config keys", async () => {
     const fixture = await createFixture({
       runtimeConfig: {
         supabaseUrl: "http://127.0.0.1:54321",
@@ -322,5 +353,17 @@ describe("Windows Host package verification", () => {
     expect(existsSync(join(fixture.releaseDir, EXPECTED_INSTALLER))).toBe(
       false,
     );
+  });
+
+  it("rejects a missing installer when it is required", async () => {
+    const fixture = await createFixture({ omitInstaller: true });
+
+    await expect(
+      verifyPackage({
+        releaseDir: fixture.releaseDir,
+        expectedVersion: EXPECTED_VERSION,
+        requireInstaller: true,
+      }),
+    ).rejects.toThrow();
   });
 });

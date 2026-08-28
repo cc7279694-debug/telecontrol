@@ -24,7 +24,7 @@ export type SmokeProcessSpawner = (
 
 export type UnpackedHostSmokeInput = {
   releaseDir: string;
-  userDataDir: string;
+  userDataDir?: string;
   timeoutMs?: number;
   spawnProcess?: SmokeProcessSpawner;
 };
@@ -45,21 +45,32 @@ export async function runUnpackedHostSmoke(
   ) {
     throw new Error("烟雾测试超时时间无效");
   }
-  const userDataDir = path.resolve(input.userDataDir);
   const temporaryRoot = await realpath(os.tmpdir());
-  if (!isStrictDescendant(userDataDir, temporaryRoot)) {
-    throw new Error("烟雾测试用户数据目录必须位于临时目录内");
-  }
 
   let child: SmokeProcess | undefined;
   let shouldCleanup = false;
+  let userDataDir: string | undefined;
   try {
-    await mkdir(userDataDir, { recursive: true });
+    if (input.userDataDir !== undefined) {
+      userDataDir = path.resolve(input.userDataDir);
+      if (!isStrictDescendant(userDataDir, temporaryRoot)) {
+        throw new Error("烟雾测试用户数据目录必须位于临时目录内");
+      }
+      // mkdir without recursive is intentional: EEXIST means the caller owns
+      // the directory, so the smoke runner must never remove it.
+      await mkdir(userDataDir);
+      shouldCleanup = true;
+    } else {
+      userDataDir = await mkdtemp(
+        path.join(temporaryRoot, "codex-remote-package-smoke-"),
+      );
+      shouldCleanup = true;
+    }
+    if (!userDataDir) throw new Error("烟雾测试用户数据目录无效");
     const resolvedUserDataDir = await realpath(userDataDir);
     if (!isStrictDescendant(resolvedUserDataDir, temporaryRoot)) {
       throw new Error("烟雾测试用户数据目录无法验证");
     }
-    shouldCleanup = true;
     const spawnProcess = input.spawnProcess ?? defaultSpawn;
     child = spawnProcess(
       executablePath,
@@ -69,7 +80,7 @@ export async function runUnpackedHostSmoke(
     await waitForExit(child, timeoutMs);
   } finally {
     if (child && !child.killed) child.kill();
-    if (shouldCleanup) {
+    if (shouldCleanup && userDataDir) {
       await rm(userDataDir, { recursive: true, force: true });
     }
   }
@@ -152,12 +163,8 @@ function isDescendantOrEqual(child: string, parent: string): boolean {
 
 async function main(): Promise<void> {
   const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
-  const smokeUserDataDir = await mkdtemp(
-    path.join(os.tmpdir(), "codex-remote-package-smoke-"),
-  );
   await runUnpackedHostSmoke({
     releaseDir: path.resolve(scriptDirectory, "..", "release"),
-    userDataDir: smokeUserDataDir,
   });
   console.log("Windows Host 解包版烟雾测试通过");
 }

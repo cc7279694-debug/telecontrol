@@ -97,6 +97,25 @@ describe("unpacked Host smoke runner", () => {
     expect(existsSync(timeoutUserDataDir)).toBe(false);
   });
 
+  it("never deletes an existing user data directory", async () => {
+    const fixture = createFixture();
+    const userDataDir = join(fixture.root, "existing-user-data");
+    const sentinelPath = join(userDataDir, "sentinel.txt");
+    mkdirSync(userDataDir);
+    writeFileSync(sentinelPath, "keep me");
+
+    await expect(
+      runUnpackedHostSmoke({
+        releaseDir: fixture.releaseDir,
+        userDataDir,
+        spawnProcess: () => new FakeChild(),
+      }),
+    ).rejects.toThrow();
+
+    expect(existsSync(userDataDir)).toBe(true);
+    expect(existsSync(sentinelPath)).toBe(true);
+  });
+
   it("rejects an unpacked executable outside the validated release directory", async () => {
     const fixture = createFixture();
     const outsideExecutable = join(fixture.root, "outside.exe");
