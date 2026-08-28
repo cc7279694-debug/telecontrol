@@ -394,6 +394,18 @@ describe("SupabaseTransport", () => {
     expect(client.lastRpc?.args.p_code_hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it("creates a pairing request from a registered Host before a device is linked", async () => {
+    const client = new FakeClient();
+    client.rpcResponse = { data: "pairing-2", error: null };
+    const transport = new SupabaseTransport(client);
+    transport.setPairingHostId("host-2");
+
+    const pairing = await transport.createPairingRequest();
+
+    expect(pairing.pairingId).toBe("pairing-2");
+    expect(client.lastRpc?.args.p_host_id).toBe("host-2");
+  });
+
   it("forwards broadcast events and closes the private channel", async () => {
     const client = new FakeClient();
     const transport = new SupabaseTransport(client);

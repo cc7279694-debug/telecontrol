@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { hashPairingCode, type RemoteEnvelope } from "@codex-remote/protocol";
 
 export interface SupabaseTransportError {
@@ -44,7 +43,7 @@ export interface SupabaseTransportClient {
 }
 
 export function asSupabaseTransportClient(
-  client: SupabaseClient,
+  client: unknown,
 ): SupabaseTransportClient {
   return client as unknown as SupabaseTransportClient;
 }
@@ -110,8 +109,13 @@ export class SupabaseTransport {
   private readonly handlers = new Set<HostEventHandler>();
   private context: TransportContext | undefined;
   private channel: SupabaseTransportChannel | undefined;
+  private pairingHostId: string | undefined;
 
   constructor(private readonly client: SupabaseTransportClient) {}
+
+  setPairingHostId(hostId: string): void {
+    this.pairingHostId = hostId;
+  }
 
   async connect(context: TransportContext): Promise<void> {
     if (this.channel) {
@@ -315,11 +319,14 @@ export class SupabaseTransport {
   }
 
   async createPairingRequest(): Promise<PairingRequest> {
-    const context = this.requireContext();
+    const resolvedHostId = this.context?.hostId ?? this.pairingHostId;
+    if (!resolvedHostId) {
+      throw new Error("Supabase transport Host is not configured");
+    }
     const code = createPairingCode();
     const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
     const response = await this.client.rpc<string>("create_pairing_request", {
-      p_host_id: context.hostId,
+      p_host_id: resolvedHostId,
       p_code_hash: await hashPairingCode(code),
       p_expires_at: expiresAt,
     });

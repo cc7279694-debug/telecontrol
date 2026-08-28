@@ -127,14 +127,19 @@ describe("Windows Host build contract", () => {
     }>(path.join(hostRoot, "tsconfig.desktop.json"));
     const desktopBuildTsconfig = readJsonFile<{
       exclude?: string[];
+      include?: string[];
     }>(path.join(hostRoot, "tsconfig.desktop.build.json"));
 
-    expect(desktopTsconfig.compilerOptions?.rootDir).toBe("src/desktop");
+    expect(desktopTsconfig.compilerOptions?.rootDir).toBe("src");
     expect(desktopTsconfig.compilerOptions?.outDir).toBe("dist/desktop");
     expect(desktopTsconfig.include).toEqual(["src/desktop/**/*.ts"]);
     expect(desktopBuildTsconfig.exclude).toEqual([
       "src/**/*.test.ts",
       "src/**/*.test.tsx",
+    ]);
+    expect(desktopBuildTsconfig.include).toEqual([
+      "src/desktop/**/*.ts",
+      "src/supabase-transport.ts",
     ]);
     expect(existsSync(path.join(hostRoot, "src", "desktop", "main.ts"))).toBe(
       true,

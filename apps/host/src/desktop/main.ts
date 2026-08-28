@@ -39,6 +39,10 @@ import { createConfigStore, type HostConfig } from "./config-store.js";
 import { createWorkspaceAuthorizer } from "./workspace-authorizer.js";
 import { createPairingController } from "./pairing-controller.js";
 import { createSupabasePairingTransport } from "./pairing-transport.js";
+import {
+  asSupabaseTransportClient,
+  SupabaseTransport,
+} from "../supabase-transport.js";
 
 registerAppScheme(protocol);
 
@@ -181,8 +185,12 @@ if (!hasSingleInstanceLock) {
         await configStore.write(localConfig);
       }
 
+      const hostTransport = new SupabaseTransport(
+        asSupabaseTransportClient(controller.getClient()),
+      );
+      hostTransport.setPairingHostId(host.id);
       pairingTransport = createSupabasePairingTransport({
-        client: controller.getClient() as never,
+        transport: hostTransport,
         getHostId: () => desktopState.host?.id ?? null,
         isSessionReady: () => {
           const current = authController?.getSnapshot();
