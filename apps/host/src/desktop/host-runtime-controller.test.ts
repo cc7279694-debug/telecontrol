@@ -264,6 +264,30 @@ describe("HostRuntimeController", () => {
     expect(fixture.controller.getSnapshot().phase).toBe("running");
   });
 
+  it("keeps Codex alive when pairing polling loses the network", async () => {
+    const fixture = createFixture({ linkedDevice: null });
+    await fixture.controller.start();
+    await fixture.controller.createPairingRequest();
+    vi.mocked(fixture.transport.findActiveLinkedDevice).mockRejectedValueOnce(
+      Object.assign(new Error("offline"), { code: "TRANSPORT_OFFLINE" }),
+    );
+
+    fixture.schedules[0]?.task();
+    await vi.waitFor(() =>
+      expect(fixture.controller.getSnapshot()).toMatchObject({
+        phase: "degraded",
+        reason: "transport-offline",
+      }),
+    );
+
+    expect(fixture.codex.close).not.toHaveBeenCalled();
+    expect(
+      fixture.schedules.some(
+        (entry) => entry.delayMs === 5_000 && !entry.cancelled,
+      ),
+    ).toBe(true);
+  });
+
   it("refuses a normal stop while a remote turn is active", async () => {
     const fixture = createFixture({ activeRemoteTurns: 1 });
     await fixture.controller.start();
@@ -321,7 +345,9 @@ describe("HostRuntimeController", () => {
   it("reconnects only the transport after a temporary network failure", async () => {
     const fixture = createFixture();
     await fixture.controller.start();
-    fixture.transport.connect.mockRejectedValueOnce(new Error("offline"));
+    fixture.transport.connect.mockRejectedValueOnce(
+      Object.assign(new Error("offline"), { code: "TRANSPORT_OFFLINE" }),
+    );
 
     await fixture.controller.handleNetworkOnline();
 
@@ -338,6 +364,30 @@ describe("HostRuntimeController", () => {
       phase: "running",
       reason: null,
     });
+  });
+
+  it("stops with a clear error when reconnect finds multiple devices", async () => {
+    const fixture = createFixture();
+    await fixture.controller.start();
+    vi.mocked(fixture.transport.findActiveLinkedDevice).mockRejectedValueOnce(
+      Object.assign(new Error("multiple devices"), {
+        code: "MULTIPLE_ACTIVE_DEVICES",
+      }),
+    );
+
+    await fixture.controller.handleNetworkOnline();
+
+    expect(fixture.controller.getSnapshot()).toMatchObject({
+      phase: "error",
+      reason: null,
+      errorCode: "multiple_active_devices",
+    });
+    expect(fixture.codex.close).toHaveBeenCalledOnce();
+    expect(
+      fixture.schedules.some(
+        (entry) => entry.delayMs === 5_000 && !entry.cancelled,
+      ),
+    ).toBe(false);
   });
 
   it("marks a crashed App Server degraded and schedules bounded restart", async () => {

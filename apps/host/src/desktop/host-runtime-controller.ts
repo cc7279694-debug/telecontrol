@@ -566,13 +566,23 @@ export function createHostRuntimeController(
         return;
       }
       await connectDevice(device);
-    } catch {
+    } catch (error) {
+      if (isTransportOfflineError(error)) {
+        publish({
+          phase: "degraded",
+          reason: "transport-offline",
+          errorCode: "transport_connect_failed",
+        });
+        scheduleTransportReconnect();
+        return;
+      }
+      const errorCode = runtimeErrorCode(error);
+      await closeConnectedResources();
       publish({
         phase: "error",
         reason: null,
-        errorCode: "multiple_active_devices",
+        errorCode,
       });
-      await closeConnectedResources();
     }
   }
 
@@ -622,10 +632,34 @@ export function createHostRuntimeController(
           reason: "awaiting-pairing",
           errorCode: null,
         });
+        if (pairingExpiresAt && Date.parse(pairingExpiresAt) > Date.now()) {
+          pairingPollCancel = ports.schedule(2_000, () => {
+            void pollForPairing();
+          });
+        }
         return;
       }
       await connectDevice(device);
-    } catch {
+    } catch (error) {
+      const errorCode = runtimeErrorCode(error);
+      if (errorCode === "multiple_active_devices") {
+        await closeConnectedResources();
+        publish({
+          phase: "error",
+          reason: null,
+          errorCode,
+        });
+        return;
+      }
+      if (!isTransportOfflineError(error)) {
+        await closeConnectedResources();
+        publish({
+          phase: "error",
+          reason: null,
+          errorCode,
+        });
+        return;
+      }
       publish({
         phase: "degraded",
         reason: "transport-offline",

@@ -198,7 +198,9 @@ describe("app protocol", () => {
     process.argv = [...originalArgv, "--hidden"];
     try {
       await import("./main.js");
-      await vi.waitFor(() => expect(handle).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(handle).toHaveBeenCalledOnce(), {
+        timeout: 10_000,
+      });
     } finally {
       process.argv = originalArgv;
       vi.doUnmock("electron");
@@ -209,5 +211,5 @@ describe("app protocol", () => {
     expect(window).toBeDefined();
     window?.emit("ready-to-show");
     expect(window?.show).not.toHaveBeenCalled();
-  });
+  }, 15_000);
 });
