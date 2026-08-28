@@ -7,8 +7,9 @@
   "scripts": {
     "dev": "tsx src/desktop/dev.ts --watch-electron",
     "build": "npm run build --workspace @codex-remote/protocol && tsc -p tsconfig.build.json && tsc -p tsconfig.desktop.build.json && vite build",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.desktop.json --noEmit && tsc -p tsconfig.renderer.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.desktop.json --noEmit && tsc -p tsconfig.renderer.json --noEmit && tsc -p tsconfig.test.json --noEmit && npm run typecheck:scripts",
     "test:e2e": "playwright test --config playwright.config.ts",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
     "generate-public-runtime": "tsx scripts/generate-public-runtime.ts",
     "package:prepare": "tsx scripts/prepare-codex-resource.ts",
     "package:dir": "npm run build && npm run generate-public-runtime && npm run package:prepare && electron-builder --config electron-builder.yml --dir --win --x64",

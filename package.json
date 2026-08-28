@@ -15,7 +15,7 @@
     "dev:host": "npm run dev --workspace @codex-remote/host",
     "package:host": "npm run package:win --workspace @codex-remote/host",
     "verify:host-package": "npm run package:verify --workspace @codex-remote/host",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && npm run typecheck:scripts --workspace @codex-remote/host",
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "build": "npm run build --workspaces"

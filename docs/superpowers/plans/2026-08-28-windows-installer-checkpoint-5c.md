@@ -178,7 +178,10 @@ git commit -m "build(windows): define installer policy"
 - Create: `apps/host/scripts/prepare-codex-resource.ts`
 - Create: `apps/host/scripts/prepare-codex-resource.test.ts`
 - Create: `apps/host/electron-builder.yml`
+- Create: `apps/host/tsconfig.scripts.json`
 - Modify: `apps/host/src/desktop/codex-cli-resolver.test.ts`
+- Modify: `apps/host/package.json`
+- Modify: `package.json`
 - Modify: `.gitignore`
 
 **Interfaces:**
@@ -234,7 +237,7 @@ Expected: FAIL because `prepareCodexResource` does not exist.
 
 - [ ] **Step 3: Implement guarded resource staging**
 
-Resolve the installed package paths with `createRequire(import.meta.url)`. Validate both versions before deleting or copying anything. Require `outputRoot` to be a strict descendant of the already-resolved `allowedOutputParent`; reject equality, drive roots, workspace roots, symlink escapes and unresolved paths before any recursive replacement. The production entry passes `apps/host/.package-resources` as the allowed parent and `.package-resources/codex` as the output; tests pass their own `mkdtemp` root and a `codex` child. Copy the entire platform `vendor` directory and the two package metadata files. Never invoke `codex.exe` in this script.
+Resolve the installed package paths with `createRequire(import.meta.url)`. Validate both versions before deleting or copying anything. Require `outputRoot` to be a strict descendant of the fixed production `apps/host/.package-resources` parent, or a child of a system temporary directory for tests; reject equality, drive roots, workspace roots, symlink escapes and unresolved paths before any recursive replacement. Require the vendor root to be a directory and every required executable/helper path to be a regular file. The production entry passes `apps/host/.package-resources` as the allowed parent and `.package-resources/codex` as the output; tests pass their own `mkdtemp` root and a `codex` child. Copy the entire platform `vendor` directory and the two package metadata files. Never invoke `codex.exe` in this script.
 
 - [ ] **Step 4: Add the electron-builder configuration**
 

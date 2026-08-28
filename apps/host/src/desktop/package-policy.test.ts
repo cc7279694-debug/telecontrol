@@ -43,7 +43,9 @@ describe("Windows installer package policy", () => {
       "package:dir": expect.any(String),
       "package:win": expect.any(String),
       "package:verify": expect.any(String),
+      "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
     });
+    expect(hostPackage.scripts?.typecheck).toContain("typecheck:scripts");
     expect(hostPackage.devDependencies).toMatchObject({
       "@electron/asar": "3.4.1",
       "@playwright/test": "1.62.1",
@@ -70,6 +72,9 @@ describe("Windows installer package policy", () => {
       "package:host": expect.any(String),
       "verify:host-package": expect.any(String),
     });
+    expect(rootPackage.scripts?.typecheck).toContain(
+      "typecheck:scripts --workspace @codex-remote/host",
+    );
     expect(rootPackage.scripts?.["test:e2e"]).toBe(
       "npm run test:e2e --workspace @codex-remote/web",
     );

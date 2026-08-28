@@ -7,7 +7,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { prepareCodexResource } from "./prepare-codex-resource.js";
 
@@ -20,6 +21,12 @@ const REQUIRED_VENDOR_FILES = [
 ] as const;
 
 const temporaryDirectories: string[] = [];
+const worktreeRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "..",
+);
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
@@ -31,6 +38,7 @@ function createFixture(options: {
   entryVersion?: string;
   platformVersion?: string;
   missingFiles?: readonly string[];
+  directoryFiles?: readonly string[];
 }) {
   const root = mkdtempSync(join(tmpdir(), "codex-resource-"));
   temporaryDirectories.push(root);
@@ -56,6 +64,10 @@ function createFixture(options: {
   for (const file of REQUIRED_VENDOR_FILES) {
     if (options.missingFiles?.includes(file)) continue;
     const filePath = join(platformPackageRoot, file);
+    if (options.directoryFiles?.includes(file)) {
+      mkdirSync(filePath, { recursive: true });
+      continue;
+    }
     mkdirSync(join(filePath, ".."), { recursive: true });
     writeFileSync(filePath, `fixture:${file}`);
   }
@@ -143,6 +155,15 @@ describe("Codex resource preparation", () => {
     expect(existsSync(fixture.outputRoot)).toBe(false);
   });
 
+  it("rejects a directory masquerading as the Codex executable", async () => {
+    const fixture = createFixture({
+      directoryFiles: ["vendor/x86_64-pc-windows-msvc/bin/codex.exe"],
+    });
+
+    await expect(prepareCodexResource(prepareInput(fixture))).rejects.toThrow();
+    expect(existsSync(fixture.outputRoot)).toBe(false);
+  });
+
   it.each([
     ["wrong entry version", { entryVersion: "0.148.0" }],
     ["wrong platform version", { platformVersion: "0.148.0-win32-x64" }],
@@ -184,6 +205,24 @@ describe("Codex resource preparation", () => {
       prepareCodexResource({
         ...prepareInput(fixture),
         outputRoot: fixture.allowedOutputParent,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects the workspace root as an output boundary", async () => {
+    const fixture = createFixture({});
+    const releaseRoot = join(worktreeRoot, "apps", "host", "release");
+    mkdirSync(releaseRoot, { recursive: true });
+    const workspaceOutputRoot = mkdtempSync(
+      join(releaseRoot, "workspace-output-"),
+    );
+    temporaryDirectories.push(workspaceOutputRoot);
+
+    await expect(
+      prepareCodexResource({
+        ...prepareInput(fixture),
+        allowedOutputParent: worktreeRoot,
+        outputRoot: workspaceOutputRoot,
       }),
     ).rejects.toThrow();
   });

@@ -1,5 +1,6 @@
 import { cp, lstat, mkdir, readFile, realpath, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -8,6 +9,14 @@ import {
 } from "../src/desktop/codex-cli-resolver.js";
 
 const require = createRequire(import.meta.url);
+const HOST_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+const PRODUCTION_ALLOWED_OUTPUT_PARENT = path.join(
+  HOST_ROOT,
+  ".package-resources",
+);
 const WINDOWS_X64_TRIPLE = "x86_64-pc-windows-msvc";
 const REQUIRED_VENDOR_FILES = [
   "bin/codex.exe",
@@ -84,11 +93,12 @@ export async function prepareCodexResource(
     "vendor",
     WINDOWS_X64_TRIPLE,
   );
-  await assertSourceTree(platformPackageRoot, vendorRoot);
+  await assertSourceTree(platformPackageRoot, vendorRoot, "directory");
   for (const relativePath of REQUIRED_VENDOR_FILES) {
     await assertSourceTree(
       platformPackageRoot,
       path.join(vendorRoot, relativePath),
+      "file",
     );
   }
   await assertOutputPathIsSafe(allowedOutputParent, outputRoot);
@@ -150,6 +160,7 @@ async function readPackageVersion(
 async function assertSourceTree(
   packageRoot: string,
   targetPath: string,
+  expectedType: "directory" | "file",
 ): Promise<void> {
   const resolvedPackageRoot = await safeRealpath(packageRoot);
   const resolvedTarget = await safeRealpath(targetPath);
@@ -160,7 +171,10 @@ async function assertSourceTree(
     );
   }
   try {
-    await lstat(targetPath);
+    const stats = await lstat(targetPath);
+    const typeMatches =
+      expectedType === "directory" ? stats.isDirectory() : stats.isFile();
+    if (!typeMatches) throw new Error("resource type mismatch");
   } catch {
     throw new CodexResourcePreparationError(
       "RESOURCE_MISSING",
@@ -173,6 +187,7 @@ async function assertOutputPathIsSafe(
   allowedOutputParent: string,
   outputRoot: string,
 ): Promise<void> {
+  assertAllowedOutputParent(allowedOutputParent);
   const resolvedAllowedParent =
     await realpathWithMissingTail(allowedOutputParent);
   const resolvedOutput = await realpathWithMissingTail(outputRoot);
@@ -186,6 +201,24 @@ async function assertOutputPathIsSafe(
     throw new CodexResourcePreparationError(
       "INVALID_PATH",
       "Codex 输出目录不能是符号链接",
+    );
+  }
+}
+
+function assertAllowedOutputParent(allowedOutputParent: string): void {
+  if (allowedOutputParent === PRODUCTION_ALLOWED_OUTPUT_PARENT) return;
+
+  const temporaryRoot = path.resolve(tmpdir());
+  const relativePath = path.relative(temporaryRoot, allowedOutputParent);
+  const isTemporaryChild =
+    relativePath !== "" &&
+    relativePath !== ".." &&
+    !relativePath.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relativePath);
+  if (!isTemporaryChild) {
+    throw new CodexResourcePreparationError(
+      "INVALID_PATH",
+      "Codex 输出边界只能使用生产资源目录或测试临时目录",
     );
   }
 }
@@ -276,8 +309,6 @@ function isDescendantOrEqual(child: string, parent: string): boolean {
 }
 
 async function main(): Promise<void> {
-  const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
-  const hostRoot = path.resolve(scriptDirectory, "..");
   const platformPackageRoot = path.dirname(
     require.resolve("@openai/codex-win32-x64/package.json"),
   );
@@ -285,8 +316,8 @@ async function main(): Promise<void> {
   await prepareCodexResource({
     platformPackageRoot,
     entryPackageJsonPath,
-    allowedOutputParent: path.join(hostRoot, ".package-resources"),
-    outputRoot: path.join(hostRoot, ".package-resources", "codex"),
+    allowedOutputParent: PRODUCTION_ALLOWED_OUTPUT_PARENT,
+    outputRoot: path.join(PRODUCTION_ALLOWED_OUTPUT_PARENT, "codex"),
   });
 }
 
