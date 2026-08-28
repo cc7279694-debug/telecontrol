@@ -49,10 +49,47 @@ function createPackageFixture(options: {
   return {
     entryPackageJsonPath: join(root, "entry-package.json"),
     packageRoot,
+    root,
   };
 }
 
 describe("Codex CLI resolver", () => {
+  it("resolves the bundled executable from packaged resources", () => {
+    const fixture = createPackageFixture({});
+    const resourcesRoot = join(fixture.root, "resources");
+    const packagedRoot = join(resourcesRoot, "codex");
+    const packagedVendorRoot = join(
+      packagedRoot,
+      "vendor",
+      "x86_64-pc-windows-msvc",
+      "bin",
+    );
+    mkdirSync(packagedVendorRoot, { recursive: true });
+    writeFileSync(
+      join(packagedRoot, "package.json"),
+      JSON.stringify({ version: "0.149.0-win32-x64" }),
+    );
+    writeFileSync(
+      join(packagedRoot, "codex-cli-package.json"),
+      JSON.stringify({ version: "0.149.0" }),
+    );
+    const executablePath = join(packagedVendorRoot, "codex.exe");
+    writeFileSync(executablePath, "packaged test binary");
+
+    expect(
+      resolveCodexCli({
+        platform: "win32",
+        arch: "x64",
+        isPackaged: true,
+        resourcesPath: resourcesRoot,
+      }),
+    ).toMatchObject({
+      version: "0.149.0",
+      source: "packaged-resource",
+      executablePath,
+    });
+  });
+
   it("resolves the pinned Windows x64 executable from the package resource", () => {
     const fixture = createPackageFixture({});
 
