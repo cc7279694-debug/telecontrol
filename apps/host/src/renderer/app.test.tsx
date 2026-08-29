@@ -54,6 +54,12 @@ describe("Host renderer", () => {
       openAtLogin: true,
     });
     expect(await screen.findByText("Host 运行中")).toBeInTheDocument();
+    stateListener?.({
+      ...stoppedState,
+      hostStatus: "stopped",
+      openAtLogin: true,
+    });
+    expect(api.subscribeDesktopState).toHaveBeenCalledOnce();
     expect(screen.getByText("开机启动：开启")).toBeInTheDocument();
 
     view.unmount();

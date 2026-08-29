@@ -25,6 +25,20 @@ describe("Windows Host build contract", () => {
       "test:e2e": expect.any(String),
       "package:win": expect.any(String),
     });
+    expect(packageJson.scripts?.build).toContain("clean:build");
+    expect(packageJson.scripts?.["clean:build"]).toContain("clean-host-build");
+
+    const cleanBuildScript = readFileSync(
+      path.join(hostRoot, "scripts", "clean-host-build.ts"),
+      "utf8",
+    );
+    expect(cleanBuildScript).toContain('path.join(hostRoot, "dist")');
+    expect(cleanBuildScript).toContain(
+      'path.join(hostRoot, "tsconfig.build.tsbuildinfo")',
+    );
+    expect(cleanBuildScript).toContain(
+      'path.join(hostRoot, "tsconfig.desktop.build.tsbuildinfo")',
+    );
   });
 
   it("uses a structured dev watch plan that rebuilds protocol through desktop before relaunch", async () => {
@@ -72,6 +86,21 @@ describe("Windows Host build contract", () => {
           "--",
           "vite",
           "build",
+          "--watch",
+          "--emptyOutDir",
+          "false",
+        ],
+      },
+      {
+        name: "preload",
+        rebuilds: ["desktop"],
+        args: [
+          "exec",
+          "--",
+          "vite",
+          "build",
+          "--config",
+          "vite.preload.config.ts",
           "--watch",
           "--emptyOutDir",
           "false",
@@ -201,6 +230,7 @@ describe("Windows Host build contract", () => {
     expect(buildTsconfig.exclude).toEqual([
       "src/**/*.test.ts",
       "src/**/*.test.tsx",
+      "src/desktop/preload.ts",
     ]);
   });
 });

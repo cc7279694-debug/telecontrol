@@ -169,6 +169,7 @@ if (process.argv.includes("--package-smoke")) {
       pairing: null,
       notice: "此功能尚未启用",
     });
+    let e2eTrayMenuLabels: readonly string[] = [];
     let ipcController: ReturnType<typeof registerIpcController> | undefined;
     let trayController: ReturnType<typeof createTrayController> | undefined;
     let authController:
@@ -286,6 +287,7 @@ if (process.argv.includes("--package-smoke")) {
       ? createE2eFixture({
           mode: e2eMode,
           publishState: updateDesktopState,
+          holdOtp: true,
           schedule: (task) => {
             setTimeout(task, 250);
           },
@@ -609,6 +611,10 @@ if (process.argv.includes("--package-smoke")) {
     void app.whenReady().then(async () => {
       installAppProtocol(protocol, rendererRoot);
       if (e2eFixture) {
+        globalThis.__codexRemoteE2e = {
+          ...e2eFixture.control,
+          getTrayMenuLabels: () => e2eTrayMenuLabels,
+        };
         ipcController = registerIpcController({
           ipcMain,
           getManagementWindow: () => windowManager.getWindow(),
@@ -630,8 +636,14 @@ if (process.argv.includes("--package-smoke")) {
             };
           },
           Menu: {
-            buildFromTemplate: (template: TrayMenuItem[]) =>
-              Menu.buildFromTemplate(template as MenuItemConstructorOptions[]),
+            buildFromTemplate: (template: TrayMenuItem[]) => {
+              e2eTrayMenuLabels = template.map(
+                (item) => item.label ?? item.type ?? "",
+              );
+              return Menu.buildFromTemplate(
+                template as MenuItemConstructorOptions[],
+              );
+            },
           },
           trayImage,
           getState: () => desktopState,

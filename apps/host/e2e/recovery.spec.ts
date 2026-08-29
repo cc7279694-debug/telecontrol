@@ -22,6 +22,10 @@ test("presents offline, bounded Codex restart, and recovered states", async ({
 
   await setScenario(electronApp, "ready");
   await expect(page.getByText("Host 运行中")).toBeVisible();
+  await page.getByRole("button", { name: "运行 Doctor" }).click();
+  await expect(
+    page.getByText("Doctor 检查通过", { exact: true }).last(),
+  ).toBeVisible();
 });
 
 test("does not overflow common mobile viewport widths", async ({ page }) => {

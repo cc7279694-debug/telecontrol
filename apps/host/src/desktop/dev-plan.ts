@@ -6,7 +6,7 @@ const desktopDir = path.dirname(fileURLToPath(import.meta.url));
 export const hostRoot = path.resolve(desktopDir, "..", "..");
 
 export type WatchCommandPlan = {
-  name: "typescript" | "renderer";
+  name: "typescript" | "renderer" | "preload";
   args: string[];
   rebuilds: Array<"protocol" | "host-core" | "desktop" | "renderer">;
 };
@@ -38,6 +38,21 @@ export const persistentWatchCommands: WatchCommandPlan[] = [
     name: "renderer",
     args: ["exec", "--", "vite", "build", "--watch", "--emptyOutDir", "false"],
     rebuilds: ["renderer"],
+  },
+  {
+    name: "preload",
+    args: [
+      "exec",
+      "--",
+      "vite",
+      "build",
+      "--config",
+      "vite.preload.config.ts",
+      "--watch",
+      "--emptyOutDir",
+      "false",
+    ],
+    rebuilds: ["desktop"],
   },
 ];
 

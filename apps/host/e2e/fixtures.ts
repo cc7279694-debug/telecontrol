@@ -90,6 +90,67 @@ export async function getActionCalls(
   });
 }
 
+export async function getTrayMenuLabels(
+  electronApp: ElectronApplication,
+): Promise<readonly string[]> {
+  return electronApp.evaluate(() => {
+    const control = (
+      globalThis as typeof globalThis & {
+        __codexRemoteE2e?: {
+          getTrayMenuLabels: () => readonly string[];
+        };
+      }
+    ).__codexRemoteE2e;
+    if (!control) throw new Error("E2E control unavailable");
+    return [...control.getTrayMenuLabels()];
+  });
+}
+
+export async function setPairingState(
+  electronApp: ElectronApplication,
+): Promise<void> {
+  await electronApp.evaluate(() => {
+    const control = (
+      globalThis as typeof globalThis & {
+        __codexRemoteE2e?: { setPairingState: () => void };
+      }
+    ).__codexRemoteE2e;
+    if (!control) throw new Error("E2E control unavailable");
+    control.setPairingState();
+  });
+}
+
+export async function setActiveRemoteTurns(
+  electronApp: ElectronApplication,
+  count: number,
+): Promise<void> {
+  await electronApp.evaluate((_electron, requestedCount) => {
+    const control = (
+      globalThis as typeof globalThis & {
+        __codexRemoteE2e?: {
+          setActiveRemoteTurns: (nextCount: number) => void;
+        };
+      }
+    ).__codexRemoteE2e;
+    if (!control) throw new Error("E2E control unavailable");
+    control.setActiveRemoteTurns(requestedCount);
+  }, count);
+}
+
+export async function releaseOtp(
+  electronApp: ElectronApplication,
+): Promise<void> {
+  await electronApp.evaluate(() => {
+    const control = (
+      globalThis as typeof globalThis & {
+        __codexRemoteE2e?: { releaseOtp: () => void };
+      }
+    ).__codexRemoteE2e;
+    if (!control) throw new Error("E2E control unavailable");
+    control.releaseOtp();
+  });
+}
+
 export async function isWindowVisible(
   electronApp: ElectronApplication,
 ): Promise<boolean> {

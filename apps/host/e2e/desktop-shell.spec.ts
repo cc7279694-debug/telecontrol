@@ -1,4 +1,9 @@
-import { test, expect, isWindowVisible } from "./fixtures.js";
+import {
+  expect,
+  getTrayMenuLabels,
+  isWindowVisible,
+  test,
+} from "./fixtures.js";
 
 test("keeps the renderer on the trusted local app protocol", async ({
   page,
@@ -39,6 +44,18 @@ test("shows a normal launch and keeps a hidden launch hidden", async ({
   electronApp,
 }) => {
   await expect.poll(() => isWindowVisible(electronApp)).toBe(true);
+  await expect
+    .poll(() => getTrayMenuLabels(electronApp))
+    .toEqual([
+      "状态：Host 运行中",
+      "separator",
+      "打开管理窗口",
+      "停止 Host",
+      "运行 Doctor",
+      "开机时启动",
+      "separator",
+      "退出",
+    ]);
 });
 
 test.describe("hidden startup", () => {

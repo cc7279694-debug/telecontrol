@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import {
   DesktopStateSchema,
@@ -15,6 +16,10 @@ export type E2eMode = {
 
 export type E2eControl = {
   setScenario(scenario: E2eScenario): void;
+  setPairingState(): void;
+  setActiveRemoteTurns(count: number): void;
+  releaseOtp(): void;
+  getTrayMenuLabels(): readonly string[];
   getActionCalls(): readonly string[];
 };
 
@@ -46,6 +51,20 @@ function containsE2eVariable(source: NodeJS.ProcessEnv): boolean {
   );
 }
 
+function pathsEqual(left: string, right: string) {
+  return process.platform === "win32"
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right;
+}
+
+function resolveExistingPath(input: string) {
+  try {
+    return realpathSync.native(input);
+  } catch {
+    return null;
+  }
+}
+
 export function resolveE2eMode(input: {
   isPackaged: boolean;
   source: NodeJS.ProcessEnv;
@@ -74,8 +93,16 @@ export function resolveE2eMode(input: {
 
   const temporaryRoot = path.resolve(input.tempDir);
   const userDataDir = path.resolve(rawUserDataDir);
+  const resolvedTemporaryRoot =
+    resolveExistingPath(temporaryRoot) ?? temporaryRoot;
+  const resolvedUserDataDir = resolveExistingPath(userDataDir);
+  if (resolvedUserDataDir && !pathsEqual(resolvedUserDataDir, userDataDir)) {
+    throw new E2eModeError("E2E_MODE_INVALID");
+  }
+
+  const checkedUserDataDir = resolvedUserDataDir ?? userDataDir;
   if (
-    path.dirname(userDataDir) !== temporaryRoot ||
+    !pathsEqual(path.dirname(checkedUserDataDir), resolvedTemporaryRoot) ||
     !path.basename(userDataDir).startsWith("codex-remote-e2e-")
   ) {
     throw new E2eModeError("E2E_MODE_INVALID");
@@ -147,10 +174,13 @@ export function createE2eFixture(input: {
   mode: E2eMode;
   publishState: (state: DesktopState) => void;
   schedule?: (task: () => void) => void;
+  holdOtp?: boolean;
 }): E2eFixture {
   let state = stateForScenario(input.mode.scenario);
   let currentScenario = input.mode.scenario;
+  let generation = 0;
   const actionCalls: string[] = [];
+  let releasePendingOtp: (() => void) | undefined;
   const schedule = input.schedule ?? ((task) => setTimeout(task, 25));
 
   function publish(nextState: DesktopState) {
@@ -163,6 +193,8 @@ export function createE2eFixture(input: {
   }
 
   function setScenario(scenario: E2eScenario) {
+    const scenarioGeneration = generation + 1;
+    generation = scenarioGeneration;
     currentScenario = scenario;
     if (scenario !== "codex-failed") {
       publish(stateForScenario(scenario));
@@ -176,14 +208,47 @@ export function createE2eFixture(input: {
       notice: "Codex App Server 正在重启（1/3）",
     });
     schedule(() => {
+      if (
+        currentScenario !== "codex-failed" ||
+        generation !== scenarioGeneration
+      ) {
+        return;
+      }
       publish({
         ...stateForScenario("ready"),
         hostStatus: "degraded",
         runtimeReason: "codex-restarting",
         notice: "Codex App Server 正在重启（2/3）",
       });
-      schedule(() => publish(stateForScenario("codex-failed")));
+      schedule(() => {
+        if (
+          currentScenario === "codex-failed" &&
+          generation === scenarioGeneration
+        ) {
+          publish(stateForScenario("codex-failed"));
+        }
+      });
     });
+  }
+
+  function setPairingState() {
+    generation += 1;
+    currentScenario = "ready";
+    publish({
+      ...stateForScenario("ready"),
+      hostStatus: "degraded",
+      runtimeReason: "awaiting-pairing",
+      notice: "等待手机配对",
+    });
+  }
+
+  function setActiveRemoteTurns(count: number) {
+    publish({ ...state, activeRemoteTurns: Math.max(0, Math.floor(count)) });
+  }
+
+  function releaseOtp() {
+    releasePendingOtp?.();
+    releasePendingOtp = undefined;
   }
 
   const success = (message: string): ActionResult => ({
@@ -195,6 +260,11 @@ export function createE2eFixture(input: {
     getDesktopState: async () => state,
     requestOtp: async () => {
       record("requestOtp");
+      if (input.holdOtp) {
+        await new Promise<void>((resolve) => {
+          releasePendingOtp = resolve;
+        });
+      }
       return success("验证码已发送");
     },
     verifyOtp: async () => {
@@ -295,6 +365,10 @@ export function createE2eFixture(input: {
     handlers,
     control: {
       setScenario,
+      setPairingState,
+      setActiveRemoteTurns,
+      releaseOtp,
+      getTrayMenuLabels: () => [],
       getActionCalls: () => Object.freeze([...actionCalls]),
     },
     state,

@@ -1,3 +1,5 @@
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -6,6 +8,7 @@ import {
   resolveE2eMode,
   type E2eScenario,
 } from "./e2e-mode.js";
+import type { DesktopState } from "./contract.js";
 
 const temporaryRoot = path.resolve("C:\\Temp");
 
@@ -232,5 +235,53 @@ describe("createE2eFixture", () => {
         }),
       ]),
     );
+  });
+
+  it("does not let stale restart callbacks overwrite a newer recovered state", () => {
+    const published: DesktopState[] = [];
+    const scheduled: Array<() => void> = [];
+    const fixture = createE2eFixture({
+      mode: {
+        scenario: "ready",
+        userDataDir: path.join(temporaryRoot, "codex-remote-e2e-race"),
+      },
+      publishState: (state) => published.push(state),
+      schedule: (task) => scheduled.push(task),
+    });
+
+    fixture.control.setScenario("codex-failed");
+    fixture.control.setScenario("ready");
+    scheduled.shift()?.();
+    scheduled.shift()?.();
+
+    expect(published.at(-1)).toMatchObject({
+      hostStatus: "running",
+      runtimeReason: null,
+    });
+  });
+
+  it("rejects a temporary-directory junction that resolves outside the temp root", () => {
+    const testRoot = mkdtempSync(path.join(os.tmpdir(), "codex-e2e-root-"));
+    const outsideRoot = mkdtempSync(
+      path.join(os.tmpdir(), "codex-e2e-outside-"),
+    );
+    const junction = path.join(testRoot, "codex-remote-e2e-junction");
+
+    try {
+      symlinkSync(outsideRoot, junction, "junction");
+
+      expect(() =>
+        resolveE2eMode({
+          isPackaged: false,
+          source: validSource({
+            CODEX_REMOTE_E2E_USER_DATA: junction,
+          }),
+          tempDir: testRoot,
+        }),
+      ).toThrow(E2eModeError);
+    } finally {
+      rmSync(testRoot, { recursive: true, force: true });
+      rmSync(outsideRoot, { recursive: true, force: true });
+    }
   });
 });
