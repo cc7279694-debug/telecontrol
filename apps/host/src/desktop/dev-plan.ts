@@ -46,7 +46,7 @@ export const relaunchWatchPlans: RelaunchWatchPlan[] = [
     rootRelativePath: "dist",
     triggers: [
       "desktop/main.js",
-      "desktop/preload.js",
+      "desktop/preload.cjs",
       "renderer/index.html",
       "renderer/assets/",
     ],

@@ -83,7 +83,7 @@ describe("Windows Host build contract", () => {
         rootRelativePath: "dist",
         triggers: [
           "desktop/main.js",
-          "desktop/preload.js",
+          "desktop/preload.cjs",
           "renderer/index.html",
           "renderer/assets/",
         ],
@@ -108,6 +108,26 @@ describe("Windows Host build contract", () => {
     expect(viteConfig.build?.rollupOptions?.input).toBe(
       path.join(hostRoot, "index.html"),
     );
+  }, 60_000);
+
+  it("keeps the sandboxed preload as a CommonJS bundle", async () => {
+    const preloadConfigPath = path.join(hostRoot, "vite.preload.config.ts");
+
+    expect(existsSync(preloadConfigPath)).toBe(true);
+
+    const preloadConfigModule = await import(
+      pathToFileURL(preloadConfigPath).href
+    );
+    const preloadConfig =
+      typeof preloadConfigModule.default === "function"
+        ? await preloadConfigModule.default({ command: "build", mode: "test" })
+        : preloadConfigModule.default;
+
+    expect(preloadConfig.build?.outDir).toBe("dist/desktop");
+    expect(preloadConfig.build?.emptyOutDir).toBe(false);
+    expect(preloadConfig.build?.lib?.formats).toEqual(["cjs"]);
+    expect(preloadConfig.build?.rollupOptions?.external).toEqual(["electron"]);
+    expect(preloadConfig.build?.lib?.fileName()).toBe("preload.cjs");
   }, 60_000);
 
   it("does not depend on electron-updater", () => {
@@ -136,6 +156,7 @@ describe("Windows Host build contract", () => {
     expect(desktopBuildTsconfig.exclude).toEqual([
       "src/**/*.test.ts",
       "src/**/*.test.tsx",
+      "src/desktop/preload.ts",
     ]);
     expect(desktopBuildTsconfig.include).toEqual(["src/**/*.ts"]);
     expect(existsSync(path.join(hostRoot, "src", "desktop", "main.ts"))).toBe(
@@ -144,6 +165,9 @@ describe("Windows Host build contract", () => {
     expect(
       existsSync(path.join(hostRoot, "src", "desktop", "preload.ts")),
     ).toBe(true);
+    expect(existsSync(path.join(hostRoot, "vite.preload.config.ts"))).toBe(
+      true,
+    );
   });
 
   it("typechecks tests while keeping test files out of production builds", () => {

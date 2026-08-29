@@ -3,6 +3,7 @@ type PreventableEvent = {
 };
 
 type ManagedWebContents = {
+  sender?: unknown;
   mainFrame: {
     url: string;
     isDestroyed: () => boolean;

@@ -64,7 +64,7 @@ async function createFixture(options: {
       version: "0.1.0",
     }),
     "dist/desktop/main.js": "export {};",
-    "dist/desktop/preload.js": "export {};",
+    "dist/desktop/preload.cjs": "module.exports = {};",
     "dist/renderer/index.html": "<!doctype html>",
     "node_modules/@codex-remote/protocol/package.json": JSON.stringify({
       name: "@codex-remote/protocol",
@@ -154,7 +154,7 @@ describe("Windows Host package verification", () => {
 
   it.each([
     ["main entry", "dist/desktop/main.js"],
-    ["preload entry", "dist/desktop/preload.js"],
+    ["preload entry", "dist/desktop/preload.cjs"],
     ["renderer entry", "dist/renderer/index.html"],
   ])("rejects an app.asar missing the %s", async (_label, missingPath) => {
     const fixture = await createFixture({

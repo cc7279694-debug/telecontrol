@@ -11,7 +11,7 @@ const EXPECTED_PLATFORM_VERSION = "0.149.0-win32-x64" as const;
 const EXPECTED_PROTOCOL_VERSION = "0.1.0" as const;
 const REQUIRED_ASAR_FILES = [
   "dist/desktop/main.js",
-  "dist/desktop/preload.js",
+  "dist/desktop/preload.cjs",
   "dist/renderer/index.html",
   "node_modules/@codex-remote/protocol/package.json",
 ] as const;

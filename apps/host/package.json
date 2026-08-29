@@ -6,7 +6,7 @@
   "main": "dist/desktop/main.js",
   "scripts": {
     "dev": "tsx src/desktop/dev.ts --watch-electron",
-    "build": "npm run build --workspace @codex-remote/protocol && tsc -p tsconfig.build.json && tsc -p tsconfig.desktop.build.json && vite build",
+    "build": "npm run build --workspace @codex-remote/protocol && tsc -p tsconfig.build.json && tsc -p tsconfig.desktop.build.json && vite build && vite build --config vite.preload.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.desktop.json --noEmit && tsc -p tsconfig.renderer.json --noEmit && tsc -p tsconfig.test.json --noEmit && npm run typecheck:scripts",
     "test:e2e": "playwright test --config playwright.config.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",

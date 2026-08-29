@@ -187,4 +187,83 @@ describe("Host renderer", () => {
 
     expect(api.startHost).toHaveBeenCalledOnce();
   });
+
+  it("exposes Doctor, startup and log controls for a signed-in Host", async () => {
+    const api = {
+      getDesktopState: vi.fn(async () => ({
+        ...stoppedState,
+        authStatus: "signed-in",
+        host: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Windows Host",
+          protocolVersion: 1,
+        },
+      })),
+      subscribeDesktopState: vi.fn(() => vi.fn()),
+      runDoctor: vi.fn(async () => ({ ok: true, message: "Doctor 检查通过" })),
+      setOpenAtLogin: vi.fn(async () => ({
+        ok: true,
+        message: "已启用开机启动",
+      })),
+      openLogFolder: vi.fn(async () => ({
+        ok: true,
+        message: "已打开日志目录",
+      })),
+    } as unknown as DesktopApi;
+    Object.defineProperty(window, "codexRemoteHost", {
+      configurable: true,
+      value: api,
+    });
+
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: "运行 Doctor" }),
+    );
+    await user.click(screen.getByRole("checkbox", { name: "开机时启动" }));
+    await user.click(screen.getByRole("button", { name: "打开日志目录" }));
+
+    expect(api.runDoctor).toHaveBeenCalledOnce();
+    expect(api.setOpenAtLogin).toHaveBeenCalledWith({ enabled: true });
+    expect(api.openLogFolder).toHaveBeenCalledOnce();
+  });
+
+  it("requires the returned phrase before clearing local data", async () => {
+    const api = {
+      getDesktopState: vi.fn(async () => ({
+        ...stoppedState,
+        authStatus: "signed-in",
+        host: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Windows Host",
+          protocolVersion: 1,
+        },
+      })),
+      subscribeDesktopState: vi.fn(() => vi.fn()),
+      beginDataReset: vi.fn(async () => ({ phrase: "确认清除本机数据" })),
+      confirmDataReset: vi.fn(async () => ({
+        ok: true,
+        message: "本机数据已清除",
+      })),
+    } as unknown as DesktopApi;
+    Object.defineProperty(window, "codexRemoteHost", {
+      configurable: true,
+      value: api,
+    });
+
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: "清除本机数据" }),
+    );
+    expect(screen.getByText("确认清除本机数据")).toBeInTheDocument();
+
+    const phraseInput = screen.getByLabelText("确认内容");
+    await user.type(phraseInput, "确认清除本机数据");
+    await user.click(screen.getByRole("button", { name: "确认清除" }));
+
+    expect(api.confirmDataReset).toHaveBeenCalledWith({
+      phrase: "确认清除本机数据",
+    });
+  });
 });

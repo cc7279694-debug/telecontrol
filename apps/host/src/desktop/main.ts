@@ -1,4 +1,5 @@
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   app,
@@ -43,6 +44,11 @@ import { createRedactedLogger } from "./redacted-logger.js";
 import { createDoctor } from "./doctor.js";
 import { createHostRuntimeController } from "./host-runtime-controller.js";
 import { resolveCodexCli } from "./codex-cli-resolver.js";
+import {
+  createE2eFixture,
+  resolveE2eMode,
+  type E2eControl,
+} from "./e2e-mode.js";
 import { CodexAppServerAdapter } from "../codex-app-server-adapter.js";
 import { createCodexAppServerProcess } from "../codex-process.js";
 import { RemoteCommandRunner } from "../remote-command-runner.js";
@@ -54,7 +60,21 @@ import {
 } from "../supabase-transport.js";
 import type { RuntimeTransport } from "./host-runtime-controller.js";
 
+declare global {
+  var __codexRemoteE2e: E2eControl | undefined;
+}
+
 registerAppScheme(protocol);
+
+const e2eMode = resolveE2eMode({
+  isPackaged: app.isPackaged,
+  source: process.env,
+  tempDir: os.tmpdir(),
+});
+if (e2eMode) {
+  app.setPath("userData", e2eMode.userDataDir);
+  globalThis.__codexRemoteE2e = undefined;
+}
 
 async function runPackageSmoke(): Promise<void> {
   try {
@@ -87,16 +107,19 @@ if (process.argv.includes("--package-smoke")) {
   } else {
     const desktopDir = path.dirname(fileURLToPath(import.meta.url));
     const rendererRoot = path.resolve(desktopDir, "..", "renderer");
-    const trustedPreloadPath = path.resolve(desktopDir, "preload.js");
+    const trustedPreloadPath = path.resolve(desktopDir, "preload.cjs");
     const startHidden = process.argv.includes("--hidden");
-    const loginItemController = createLoginItemController(app);
+    const loginItemController = e2eMode ? null : createLoginItemController(app);
     const windowManager = createWindowManager({
       createBrowserWindow: (options): ManagedWindow => {
         const electronWindow = new BrowserWindow(options);
 
         return {
           webContents: {
-            mainFrame: electronWindow.webContents.mainFrame,
+            sender: electronWindow.webContents,
+            get mainFrame() {
+              return electronWindow.webContents.mainFrame;
+            },
             send: (channel, state) => {
               electronWindow.webContents.send(channel, state);
             },
@@ -257,6 +280,20 @@ if (process.argv.includes("--package-smoke")) {
       desktopState = DesktopStateSchema.parse(nextState);
       ipcController?.publishDesktopState(desktopState);
       trayController?.refresh();
+    }
+
+    const e2eFixture = e2eMode
+      ? createE2eFixture({
+          mode: e2eMode,
+          publishState: updateDesktopState,
+          schedule: (task) => {
+            setTimeout(task, 250);
+          },
+        })
+      : undefined;
+    if (e2eFixture) {
+      desktopState = e2eFixture.state;
+      globalThis.__codexRemoteE2e = e2eFixture.control;
     }
 
     const handlers: DesktopIpcHandlers = {
@@ -531,7 +568,7 @@ if (process.argv.includes("--package-smoke")) {
         return { ok: report.summary.status !== "failed", message };
       },
       setOpenAtLogin: async ({ enabled }) => {
-        if (!loginItemController.setEnabled(enabled)) {
+        if (loginItemController?.setEnabled(enabled) !== true) {
           return { ok: false, message: "无法更新开机启动设置" };
         }
 
@@ -571,6 +608,50 @@ if (process.argv.includes("--package-smoke")) {
 
     void app.whenReady().then(async () => {
       installAppProtocol(protocol, rendererRoot);
+      if (e2eFixture) {
+        ipcController = registerIpcController({
+          ipcMain,
+          getManagementWindow: () => windowManager.getWindow(),
+          handlers: e2eFixture.handlers,
+        });
+
+        const trayImage = await app.getFileIcon(process.execPath, {
+          size: "small",
+        });
+        trayController = createTrayController({
+          createTray: (image) => {
+            const electronTray = new Tray(image as string | NativeImage);
+            return {
+              setToolTip: (toolTip: string) => electronTray.setToolTip(toolTip),
+              setContextMenu: (menu: unknown) =>
+                electronTray.setContextMenu(menu as Electron.Menu | null),
+              on: (event: "double-click", listener: () => void) =>
+                electronTray.on(event, listener),
+            };
+          },
+          Menu: {
+            buildFromTemplate: (template: TrayMenuItem[]) =>
+              Menu.buildFromTemplate(template as MenuItemConstructorOptions[]),
+          },
+          trayImage,
+          getState: () => desktopState,
+          callbacks: {
+            openWindow: () => windowManager.show(),
+            startHost: () => e2eFixture.handlers.startHost(),
+            stopHost: () => e2eFixture.handlers.stopHost({ force: false }),
+            runDoctor: () => e2eFixture.handlers.runDoctor(),
+            setOpenAtLogin: (enabled) =>
+              e2eFixture.handlers.setOpenAtLogin({ enabled }),
+            exit: () => {
+              windowManager.prepareForShutdown();
+              app.quit();
+            },
+          },
+        });
+        trayController.create();
+        windowManager.create({ startHidden });
+        return;
+      }
       dataResetHandlers = createDataResetHandlers(
         createDataResetController({ userDataDir: app.getPath("userData") }),
       );
@@ -774,7 +855,7 @@ if (process.argv.includes("--package-smoke")) {
       updateDesktopState({
         ...desktopState,
         workspaces: workspaceAuthorizer?.list() ?? [],
-        openAtLogin: loginItemController.isEnabled(),
+        openAtLogin: loginItemController?.isEnabled() ?? false,
       });
 
       ipcController = registerIpcController({

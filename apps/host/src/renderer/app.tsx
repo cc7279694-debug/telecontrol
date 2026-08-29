@@ -27,6 +27,8 @@ export function App() {
   const [message, setMessage] = useState<string | null>(null);
   const [otpSent, setOtpSent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [resetPhrase, setResetPhrase] = useState<string | null>(null);
+  const [resetInput, setResetInput] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -174,6 +176,79 @@ export function App() {
     }
   }
 
+  async function handleRunDoctor() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await window.codexRemoteHost.runDoctor();
+      setMessage(result.message);
+    } catch {
+      setMessage("Doctor 检查失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSetOpenAtLogin(enabled: boolean) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await window.codexRemoteHost.setOpenAtLogin({ enabled });
+      setMessage(result.message);
+    } catch {
+      setMessage("无法更新开机启动设置");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleOpenLogFolder() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await window.codexRemoteHost.openLogFolder();
+      setMessage(result.message);
+    } catch {
+      setMessage("无法打开日志目录");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleBeginDataReset() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await window.codexRemoteHost.beginDataReset();
+      setResetPhrase(result.phrase);
+      setResetInput("");
+      setMessage("请完成确认后清除本机数据");
+    } catch {
+      setMessage("无法开始数据清除，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleConfirmDataReset() {
+    if (busy || !resetPhrase) return;
+    setBusy(true);
+    try {
+      const result = await window.codexRemoteHost.confirmDataReset({
+        phrase: resetInput,
+      });
+      setMessage(result.message);
+      if (result.ok) {
+        setResetPhrase(null);
+        setResetInput("");
+      }
+    } catch {
+      setMessage("数据清除失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="shell">
       <section className="panel">
@@ -302,6 +377,76 @@ export function App() {
                   }
                   onCreate={() => void handleCreatePairingCode()}
                 />
+                <section className="feature-card" aria-label="维护">
+                  <div className="section-heading">
+                    <div>
+                      <p className="eyebrow">维护</p>
+                      <h2>本机设置</h2>
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => void handleRunDoctor()}
+                      disabled={busy}
+                    >
+                      运行 Doctor
+                    </button>
+                  </div>
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      aria-label="开机时启动"
+                      checked={desktopState.openAtLogin}
+                      onChange={(event) =>
+                        void handleSetOpenAtLogin(event.target.checked)
+                      }
+                      disabled={busy}
+                    />
+                    <span>开机时启动</span>
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => void handleOpenLogFolder()}
+                    disabled={busy}
+                  >
+                    打开日志目录
+                  </button>
+                  {resetPhrase ? (
+                    <div className="reset-card">
+                      <p className="detail">
+                        请输入以下确认内容：<strong>{resetPhrase}</strong>
+                      </p>
+                      <label>
+                        确认内容
+                        <input
+                          value={resetInput}
+                          onChange={(event) =>
+                            setResetInput(event.target.value)
+                          }
+                          disabled={busy}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => void handleConfirmDataReset()}
+                        disabled={busy || resetInput.length === 0}
+                      >
+                        确认清除
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => void handleBeginDataReset()}
+                      disabled={busy}
+                    >
+                      清除本机数据
+                    </button>
+                  )}
+                </section>
               </>
             ) : null}
             <p className="detail">

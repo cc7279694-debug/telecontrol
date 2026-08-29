@@ -20,6 +20,7 @@ type SenderFrame = {
 };
 
 type ManagedWebContents = {
+  sender?: unknown;
   mainFrame: SenderFrame;
   send: (channel: string, state: DesktopState) => void;
 };
@@ -92,7 +93,8 @@ function assertTrustedSender(
   if (
     !managementWindow ||
     managementWindow.isDestroyed() ||
-    event.sender !== managementWindow.webContents ||
+    event.sender !==
+      (managementWindow.webContents.sender ?? managementWindow.webContents) ||
     !senderFrame ||
     senderFrame !== managementWindow.webContents.mainFrame ||
     senderFrame.isDestroyed() ||
