@@ -15,6 +15,14 @@ function readJson(relativePath: string): Record<string, unknown> {
 }
 
 describe("Next.js production dependency policy", () => {
+  it("declares the shared protocol package in the web workspace", () => {
+    const webPackage = readJson("apps/web/package.json") as {
+      dependencies?: Record<string, string>;
+    };
+
+    expect(webPackage.dependencies?.["@codex-remote/protocol"]).toBe("0.1.0");
+  });
+
   it("keeps Next 15 and pins the audited transitive fixes", () => {
     const rootPackage = readJson("package.json") as {
       overrides?: Record<string, unknown>;
