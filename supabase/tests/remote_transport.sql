@@ -1,6 +1,6 @@
 begin;
 
-select plan(23);
+select plan(32);
 
 select ok(
   to_regclass('public.hosts') is not null,
@@ -176,6 +176,38 @@ select ok(
   'the command transition trigger pins an empty search_path'
 );
 
+select ok(
+  exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'private'
+      and p.proname = 'cleanup_remote_retention'
+      and p.prosecdef
+      and p.proconfig @> array['search_path=""']
+  ),
+  'the retention helper is private and pins an empty search_path'
+);
+
+select ok(
+  to_regclass('cron.job') is not null,
+  'the Supabase Cron catalog is installed for retention scheduling'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'private'
+      and p.proname = 'cleanup_remote_retention'
+      and not has_function_privilege('anon', p.oid, 'execute')
+      and not has_function_privilege('authenticated', p.oid, 'execute')
+      and not has_function_privilege('service_role', p.oid, 'execute')
+  ),
+  'only the scheduler owner can execute the retention helper'
+);
+
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data
@@ -227,6 +259,103 @@ insert into public.remote_commands (
   '00000000-0000-0000-0000-000000000012',
   '00000000-0000-0000-0000-000000000014', 'turn.start', 'test-nonce',
   'test-ciphertext', 'remote-transport-test-command', now(), now() + interval '5 minutes'
+);
+
+insert into public.remote_commands (
+  id, owner_id, host_id, device_id, message_id, kind, nonce,
+  ciphertext, idempotency_key, status, sent_at, expires_at, completed_at
+) values (
+  '00000000-0000-0000-0000-000000000016',
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000011',
+  '00000000-0000-0000-0000-000000000012',
+  '00000000-0000-0000-0000-000000000017', 'turn.start', 'old-terminal-nonce',
+  'old-terminal-ciphertext', 'old-terminal-command', 'completed',
+  now() - interval '2 days', now() - interval '2 days', now() - interval '2 days'
+), (
+  '00000000-0000-0000-0000-000000000018',
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000011',
+  '00000000-0000-0000-0000-000000000012',
+  '00000000-0000-0000-0000-000000000019', 'turn.start', 'old-queued-nonce',
+  'old-queued-ciphertext', 'old-queued-command', 'queued',
+  now() - interval '2 days', now() - interval '2 days', null
+), (
+  '00000000-0000-0000-0000-000000000020',
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000011',
+  '00000000-0000-0000-0000-000000000012',
+  '00000000-0000-0000-0000-000000000021', 'turn.start', 'recent-nonce',
+  'recent-ciphertext', 'recent-command', 'completed',
+  now() - interval '1 hour', now() + interval '5 minutes', now() - interval '1 hour'
+);
+
+insert into public.audit_events (
+  id, owner_id, host_id, device_id, action, result, created_at
+) values (
+  '00000000-0000-0000-0000-000000000022',
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000011',
+  '00000000-0000-0000-0000-000000000012', 'old-audit', 'accepted',
+  now() - interval '31 days'
+), (
+  '00000000-0000-0000-0000-000000000023',
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000011',
+  '00000000-0000-0000-0000-000000000012', 'recent-audit', 'accepted',
+  now() - interval '1 hour'
+);
+
+insert into private.pairing_requests (
+  id, owner_id, host_id, code_hash, created_session_id, expires_at
+) values (
+  '00000000-0000-0000-0000-000000000024',
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000011', 'expired-code-hash',
+  'expired-pairing-session', now() - interval '1 hour'
+);
+
+select lives_ok(
+  $$select private.cleanup_remote_retention();$$,
+  'the scheduler can execute the retention helper'
+);
+
+select is(
+  (select count(*)::integer from public.remote_commands
+   where id in (
+     '00000000-0000-0000-0000-000000000016',
+     '00000000-0000-0000-0000-000000000018'
+   )),
+  0,
+  'old terminal and expired queued command ciphertext is removed'
+);
+
+select is(
+  (select count(*)::integer from public.remote_commands
+   where id = '00000000-0000-0000-0000-000000000020'),
+  1,
+  'recent command ciphertext remains within retention'
+);
+
+select is(
+  (select count(*)::integer from public.audit_events
+   where id = '00000000-0000-0000-0000-000000000022'),
+  0,
+  'old audit metadata is removed'
+);
+
+select is(
+  (select count(*)::integer from public.audit_events
+   where id = '00000000-0000-0000-0000-000000000023'),
+  1,
+  'recent audit metadata remains within retention'
+);
+
+select is(
+  (select count(*)::integer from private.pairing_requests
+   where id = '00000000-0000-0000-0000-000000000024'),
+  0,
+  'expired pairing request is removed'
 );
 
 set local role authenticated;
