@@ -67,7 +67,12 @@ test.describe("signed-in Host flow", () => {
     await expect(
       page.getByText("Doctor 检查通过", { exact: true }).last(),
     ).toBeVisible();
-    await page.getByRole("checkbox", { name: "开机时启动" }).check();
+    const openAtLoginCheckbox = page.getByRole("checkbox", {
+      name: "开机时启动",
+    });
+    await expect(openAtLoginCheckbox).toBeEnabled();
+    await openAtLoginCheckbox.click();
+    await expect(openAtLoginCheckbox).toBeChecked();
     await expect(page.getByText("开机启动：开启")).toBeVisible();
     await page.getByRole("button", { name: "打开日志目录" }).click();
     await expect(page.getByText("测试模式不会打开日志目录")).toBeVisible();
