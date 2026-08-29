@@ -19,6 +19,16 @@ const hostStatusLabels: Record<DesktopState["hostStatus"], string> = {
   error: "异常",
 };
 
+const unsafeDesktopMessagePattern =
+  /(?:\b(?:Error|TypeError|ReferenceError|SyntaxError)\b|[A-Za-z]:[\\/]|\\\\|\/(?:Users|home|private|tmp|var)\/|\b(?:access|refresh)[_-]?token\b|\bservice[_ -]?role\b|-----BEGIN [^-]+ PRIVATE KEY-----|[\w.+-]+@[\w.-]+\.\w+|(?:验证码|otp|code)\s*[:=]?\s*\d{4,})/i;
+
+export function sanitizeDesktopMessage(message: string, fallback: string) {
+  const trimmed = message.trim();
+  return trimmed.length > 0 && !unsafeDesktopMessagePattern.test(trimmed)
+    ? trimmed
+    : fallback;
+}
+
 export function App() {
   const [desktopState, setDesktopState] = useState<DesktopState | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -67,7 +77,9 @@ export function App() {
     setBusy(true);
     try {
       const result = await window.codexRemoteHost.requestOtp({ email });
-      setMessage(result.message);
+      setMessage(
+        sanitizeDesktopMessage(result.message, "验证码发送失败，请稍后重试"),
+      );
       if (result.ok) setOtpSent(true);
     } catch {
       setMessage("验证码发送失败，请稍后重试");
@@ -82,7 +94,9 @@ export function App() {
     setBusy(true);
     try {
       const result = await window.codexRemoteHost.verifyOtp({ email, token });
-      setMessage(result.message);
+      setMessage(
+        sanitizeDesktopMessage(result.message, "登录失败，请稍后重试"),
+      );
     } catch {
       setMessage("登录失败，请稍后重试");
     } finally {
@@ -95,7 +109,9 @@ export function App() {
     setBusy(true);
     try {
       const result = await window.codexRemoteHost.signOut();
-      setMessage(result.message);
+      setMessage(
+        sanitizeDesktopMessage(result.message, "退出登录失败，请稍后重试"),
+      );
     } catch {
       setMessage("退出登录失败，请稍后重试");
     } finally {
@@ -108,7 +124,9 @@ export function App() {
     setBusy(true);
     try {
       const result = await window.codexRemoteHost.chooseWorkspace();
-      setMessage(result.message);
+      setMessage(
+        sanitizeDesktopMessage(result.message, "添加项目失败，请稍后重试"),
+      );
     } catch {
       setMessage("添加项目失败，请稍后重试");
     } finally {
@@ -123,7 +141,9 @@ export function App() {
       const result = await window.codexRemoteHost.removeWorkspace({
         workspaceId,
       });
-      setMessage(result.message);
+      setMessage(
+        sanitizeDesktopMessage(result.message, "移除项目失败，请稍后重试"),
+      );
     } catch {
       setMessage("移除项目失败，请稍后重试");
     } finally {
@@ -136,7 +156,9 @@ export function App() {
     setBusy(true);
     try {
       const result = await window.codexRemoteHost.createPairingCode();
-      setMessage(result.message);
+      setMessage(
+        sanitizeDesktopMessage(result.message, "配对码生成失败，请稍后重试"),
+      );
     } catch {
       setMessage("配对码生成失败，请稍后重试");
     } finally {
@@ -149,7 +171,9 @@ export function App() {
     setBusy(true);
     try {
       const result = await window.codexRemoteHost.startHost();
-      setMessage(result.message);
+      setMessage(
+        sanitizeDesktopMessage(result.message, "Host 启动失败，请稍后重试"),
+      );
     } catch {
       setMessage("Host 启动失败，请稍后重试");
     } finally {
@@ -168,7 +192,9 @@ export function App() {
     setBusy(true);
     try {
       const result = await window.codexRemoteHost.stopHost({ force });
-      setMessage(result.message);
+      setMessage(
+        sanitizeDesktopMessage(result.message, "Host 停止失败，请稍后重试"),
+      );
     } catch {
       setMessage("Host 停止失败，请稍后重试");
     } finally {
@@ -181,7 +207,9 @@ export function App() {
     setBusy(true);
     try {
       const result = await window.codexRemoteHost.runDoctor();
-      setMessage(result.message);
+      setMessage(
+        sanitizeDesktopMessage(result.message, "Doctor 检查失败，请稍后重试"),
+      );
     } catch {
       setMessage("Doctor 检查失败，请稍后重试");
     } finally {
@@ -194,7 +222,9 @@ export function App() {
     setBusy(true);
     try {
       const result = await window.codexRemoteHost.setOpenAtLogin({ enabled });
-      setMessage(result.message);
+      setMessage(
+        sanitizeDesktopMessage(result.message, "无法更新开机启动设置"),
+      );
     } catch {
       setMessage("无法更新开机启动设置");
     } finally {
@@ -207,7 +237,7 @@ export function App() {
     setBusy(true);
     try {
       const result = await window.codexRemoteHost.openLogFolder();
-      setMessage(result.message);
+      setMessage(sanitizeDesktopMessage(result.message, "无法打开日志目录"));
     } catch {
       setMessage("无法打开日志目录");
     } finally {
@@ -237,7 +267,9 @@ export function App() {
       const result = await window.codexRemoteHost.confirmDataReset({
         phrase: resetInput,
       });
-      setMessage(result.message);
+      setMessage(
+        sanitizeDesktopMessage(result.message, "数据清除失败，请稍后重试"),
+      );
       if (result.ok) {
         setResetPhrase(null);
         setResetInput("");

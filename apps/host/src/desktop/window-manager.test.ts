@@ -132,4 +132,13 @@ describe("window manager", () => {
     expect(window.show).toHaveBeenCalledOnce();
     expect(window.focus).toHaveBeenCalledOnce();
   });
+
+  it("shows a normal launch when the renderer finishes before ready-to-show", () => {
+    const manager = createManager();
+    const window = manager.create();
+
+    window.webContents.emit("did-finish-load");
+
+    expect(window.show).toHaveBeenCalledOnce();
+  });
 });

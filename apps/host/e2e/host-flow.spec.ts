@@ -4,6 +4,7 @@ import {
   releaseOtp,
   setActiveRemoteTurns,
   setPairingState,
+  setRawErrorMessage,
   setScenario,
   test,
 } from "./fixtures.js";
@@ -102,9 +103,13 @@ test.describe("signed-in Host flow", () => {
     expect(dialogDismissed).toBe(true);
     expect(await getActionCalls(electronApp)).not.toContain("stopHost");
 
-    await setActiveRemoteTurns(electronApp, 0);
+    page.once("dialog", async (dialog) => {
+      expect(dialog.message()).toContain("确定要强制停止 Host 吗");
+      await dialog.accept();
+    });
     await page.getByRole("button", { name: "停止 Host" }).click();
     await expect(page.locator("p.status")).toHaveText("Host 已停止");
+    expect(await getActionCalls(electronApp)).toContain("stopHost:force");
   });
 
   test("shows a Doctor failure and supports signing out", async ({
@@ -122,5 +127,21 @@ test.describe("signed-in Host flow", () => {
     await expect(
       page.getByRole("heading", { name: "登录 Windows Host" }),
     ).toBeVisible();
+  });
+
+  test("redacts raw error details from visible messages", async ({
+    page,
+    electronApp,
+  }) => {
+    await setRawErrorMessage(electronApp);
+    await page.getByRole("button", { name: "运行 Doctor" }).click();
+
+    await expect(
+      page.getByText("Doctor 检查失败，请稍后重试", { exact: true }).last(),
+    ).toBeVisible();
+    const visibleText = await page.locator("body").innerText();
+    expect(visibleText).not.toMatch(
+      /C:\\Users|access_token|private@example\.com|123456/i,
+    );
   });
 });

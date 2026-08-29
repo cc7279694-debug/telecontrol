@@ -151,6 +151,20 @@ export async function releaseOtp(
   });
 }
 
+export async function setRawErrorMessage(
+  electronApp: ElectronApplication,
+): Promise<void> {
+  await electronApp.evaluate(() => {
+    const control = (
+      globalThis as typeof globalThis & {
+        __codexRemoteE2e?: { setRawErrorMessage: () => void };
+      }
+    ).__codexRemoteE2e;
+    if (!control) throw new Error("E2E control unavailable");
+    control.setRawErrorMessage();
+  });
+}
+
 export async function isWindowVisible(
   electronApp: ElectronApplication,
 ): Promise<boolean> {

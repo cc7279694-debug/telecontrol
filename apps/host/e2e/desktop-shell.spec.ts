@@ -42,8 +42,39 @@ test("denies external navigation and new windows", async ({
 
 test("shows a normal launch and keeps a hidden launch hidden", async ({
   electronApp,
+  page,
 }) => {
   await expect.poll(() => isWindowVisible(electronApp)).toBe(true);
+  await expect
+    .poll(() => getTrayMenuLabels(electronApp))
+    .toEqual([
+      "状态：Host 运行中",
+      "separator",
+      "打开管理窗口",
+      "停止 Host",
+      "运行 Doctor",
+      "开机时启动",
+      "separator",
+      "退出",
+    ]);
+
+  await page.getByRole("button", { name: "停止 Host" }).click();
+  await expect(page.locator("p.status")).toHaveText("Host 已停止");
+  await expect
+    .poll(() => getTrayMenuLabels(electronApp))
+    .toEqual([
+      "状态：Host 已停止",
+      "separator",
+      "打开管理窗口",
+      "启动 Host",
+      "运行 Doctor",
+      "开机时启动",
+      "separator",
+      "退出",
+    ]);
+
+  await page.getByRole("button", { name: "启动 Host" }).click();
+  await expect(page.getByText("Host 运行中")).toBeVisible();
   await expect
     .poll(() => getTrayMenuLabels(electronApp))
     .toEqual([

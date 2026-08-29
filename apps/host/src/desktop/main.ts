@@ -39,7 +39,10 @@ import { createHostRegistry, HostRegistryError } from "./host-registry.js";
 import { loadPublicRuntimeConfig } from "./public-runtime-config.js";
 import { createSupabaseAuthController } from "./supabase-auth-controller.js";
 import { createConfigStore, type HostConfig } from "./config-store.js";
-import { createWorkspaceAuthorizer } from "./workspace-authorizer.js";
+import {
+  createWorkspaceAuthorizer,
+  WorkspaceAuthorizerError,
+} from "./workspace-authorizer.js";
 import { createRedactedLogger } from "./redacted-logger.js";
 import { createDoctor } from "./doctor.js";
 import { createHostRuntimeController } from "./host-runtime-controller.js";
@@ -125,6 +128,9 @@ if (process.argv.includes("--package-smoke")) {
             },
             on: (event, listener) => {
               electronWindow.webContents.on(event, listener);
+            },
+            once: (event, listener) => {
+              electronWindow.webContents.once(event, listener);
             },
             setWindowOpenHandler: (handler) => {
               electronWindow.webContents.setWindowOpenHandler(handler);
@@ -357,7 +363,7 @@ if (process.argv.includes("--package-smoke")) {
           return {
             ok: false,
             message:
-              error instanceof Error
+              error instanceof WorkspaceAuthorizerError
                 ? error.message
                 : "添加项目失败，请稍后重试",
           };
@@ -377,7 +383,7 @@ if (process.argv.includes("--package-smoke")) {
           return {
             ok: false,
             message:
-              error instanceof Error
+              error instanceof WorkspaceAuthorizerError
                 ? error.message
                 : "移除项目失败，请稍后重试",
           };

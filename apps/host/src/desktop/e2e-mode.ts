@@ -19,6 +19,7 @@ export type E2eControl = {
   setPairingState(): void;
   setActiveRemoteTurns(count: number): void;
   releaseOtp(): void;
+  setRawErrorMessage(): void;
   getTrayMenuLabels(): readonly string[];
   getActionCalls(): readonly string[];
 };
@@ -181,6 +182,7 @@ export function createE2eFixture(input: {
   let generation = 0;
   const actionCalls: string[] = [];
   let releasePendingOtp: (() => void) | undefined;
+  let rawErrorMessage = false;
   const schedule = input.schedule ?? ((task) => setTimeout(task, 25));
 
   function publish(nextState: DesktopState) {
@@ -251,6 +253,10 @@ export function createE2eFixture(input: {
     releasePendingOtp = undefined;
   }
 
+  function setRawErrorMessage() {
+    rawErrorMessage = true;
+  }
+
   const success = (message: string): ActionResult => ({
     ok: true,
     message,
@@ -313,8 +319,8 @@ export function createE2eFixture(input: {
       });
       return success("Host 已运行");
     },
-    stopHost: async () => {
-      record("stopHost");
+    stopHost: async ({ force }) => {
+      record(force ? "stopHost:force" : "stopHost");
       publish({
         ...state,
         hostStatus: "stopped",
@@ -327,11 +333,17 @@ export function createE2eFixture(input: {
     runDoctor: async () => {
       record("runDoctor");
       const failed = currentScenario === "codex-failed";
-      const message = failed
+      const safeMessage = failed
         ? "Doctor 检查发现问题，请先修复"
         : "Doctor 检查通过";
-      publish({ ...state, notice: message });
-      return { ok: !failed, message };
+      const message = rawErrorMessage
+        ? "Error: C:\\Users\\fixture\\secret access_token=fixture-token private@example.com code=123456"
+        : safeMessage;
+      publish({
+        ...state,
+        notice: rawErrorMessage ? "Doctor 检查失败，请稍后重试" : safeMessage,
+      });
+      return { ok: !failed && !rawErrorMessage, message };
     },
     setOpenAtLogin: async ({ enabled }) => {
       record("setOpenAtLogin");
@@ -368,6 +380,7 @@ export function createE2eFixture(input: {
       setPairingState,
       setActiveRemoteTurns,
       releaseOtp,
+      setRawErrorMessage,
       getTrayMenuLabels: () => [],
       getActionCalls: () => Object.freeze([...actionCalls]),
     },

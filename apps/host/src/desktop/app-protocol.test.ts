@@ -140,6 +140,7 @@ describe("app protocol", () => {
       readonly webContents = {
         mainFrame: { url: "app://host/index.html", isDestroyed: () => false },
         on: vi.fn(),
+        once: vi.fn(),
         send: vi.fn(),
         setWindowOpenHandler: vi.fn(),
       };

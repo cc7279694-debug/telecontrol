@@ -13,6 +13,7 @@ type ManagedWebContents = {
     event: "will-navigate",
     listener: (event: PreventableEvent, url: string) => void,
   ) => unknown;
+  once: (event: "did-finish-load", listener: () => void) => unknown;
   setWindowOpenHandler: (
     handler: (details: { url: string }) => { action: "deny" },
   ) => void;
@@ -105,6 +106,14 @@ export function createWindowManager<TWindow extends ManagedWindow>({
       }
     });
     window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    let hasShown = false;
+    const showAfterInitialLoad = () => {
+      if (options.startHidden || hasShown || window.isDestroyed()) {
+        return;
+      }
+      hasShown = true;
+      window.show();
+    };
     window.on("close", (event) => {
       if (applicationIsShuttingDown) {
         return;
@@ -118,11 +127,8 @@ export function createWindowManager<TWindow extends ManagedWindow>({
         managementWindow = undefined;
       }
     });
-    window.once("ready-to-show", () => {
-      if (!options.startHidden) {
-        window.show();
-      }
-    });
+    window.once("ready-to-show", showAfterInitialLoad);
+    window.webContents.once("did-finish-load", showAfterInitialLoad);
     void window.loadURL("app://host/index.html");
 
     return window;
