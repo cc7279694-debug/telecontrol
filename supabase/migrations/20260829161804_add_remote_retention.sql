@@ -33,14 +33,13 @@ do $migration$
 declare
   existing_job_id bigint;
 begin
-  select jobid
-  into existing_job_id
-  from cron.job
-  where jobname = 'codex-remote-retention-hourly';
-
-  if existing_job_id is not null then
+  for existing_job_id in
+    select jobid
+    from cron.job
+    where jobname = 'codex-remote-retention-hourly'
+  loop
     perform cron.unschedule(existing_job_id);
-  end if;
+  end loop;
 
   perform cron.schedule(
     'codex-remote-retention-hourly',

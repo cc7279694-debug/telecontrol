@@ -9,6 +9,10 @@ const sessionMigration = readFileSync(
   new URL("./20260824020757_add_web_device_session.sql", import.meta.url),
   "utf8",
 ).replace(/\r\n/g, "\n");
+const retentionMigration = readFileSync(
+  new URL("./20260829161804_add_remote_retention.sql", import.meta.url),
+  "utf8",
+).replace(/\r\n/g, "\n");
 const packageJson = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
 ) as { scripts?: Record<string, string> };
@@ -85,6 +89,21 @@ describe("encrypted remote transport migration contract", () => {
     expect(sessionMigration).toContain("revoked_at is null");
     expect(sessionMigration).toContain(
       "auth_session_id = (select auth.jwt() ->> 'session_id')",
+    );
+  });
+
+  it("removes every same-name retention job before scheduling the canonical one", () => {
+    expect(retentionMigration).toContain(
+      "for existing_job_id in\n    select jobid",
+    );
+    expect(retentionMigration).toContain(
+      "where jobname = 'codex-remote-retention-hourly'",
+    );
+    expect(retentionMigration).toContain(
+      "perform cron.unschedule(existing_job_id)",
+    );
+    expect(retentionMigration).toContain(
+      "perform cron.schedule(\n    'codex-remote-retention-hourly'",
     );
   });
 });

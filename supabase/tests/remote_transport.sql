@@ -1,6 +1,6 @@
 begin;
 
-select plan(32);
+select plan(33);
 
 select ok(
   to_regclass('public.hosts') is not null,
@@ -190,8 +190,22 @@ select ok(
 );
 
 select ok(
-  to_regclass('cron.job') is not null,
-  'the Supabase Cron catalog is installed for retention scheduling'
+  to_regclass('cron.job') is not null
+  and (
+    select count(*)
+    from cron.job
+    where jobname = 'codex-remote-retention-hourly'
+  ) = 1
+  and exists (
+    select 1
+    from cron.job
+    where jobname = 'codex-remote-retention-hourly'
+      and active
+      and schedule = '17 * * * *'
+      and command = 'select private.cleanup_remote_retention();'
+      and username = 'postgres'
+  ),
+  'exactly one active postgres retention job is scheduled'
 );
 
 select ok(
@@ -315,6 +329,15 @@ insert into private.pairing_requests (
   'expired-pairing-session', now() - interval '1 hour'
 );
 
+insert into private.pairing_requests (
+  id, owner_id, host_id, code_hash, created_session_id, expires_at
+) values (
+  '00000000-0000-0000-0000-000000000025',
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000011', 'active-code-hash',
+  'active-pairing-session', now() + interval '5 minutes'
+);
+
 select lives_ok(
   $$select private.cleanup_remote_retention();$$,
   'the scheduler can execute the retention helper'
@@ -356,6 +379,13 @@ select is(
    where id = '00000000-0000-0000-0000-000000000024'),
   0,
   'expired pairing request is removed'
+);
+
+select is(
+  (select count(*)::integer from private.pairing_requests
+   where id = '00000000-0000-0000-0000-000000000025'),
+  1,
+  'active pairing request remains within retention'
 );
 
 set local role authenticated;

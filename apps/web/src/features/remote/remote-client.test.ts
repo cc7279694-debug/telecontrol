@@ -307,9 +307,10 @@ describe("BrowserRemoteClient", () => {
     fixture.channel.emit({
       payload: { ...envelope, ciphertext: `${envelope.ciphertext}x` },
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.waitFor(() => {
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
 
-    expect(handler).toHaveBeenCalledTimes(1);
     expect(handler).toHaveBeenCalledWith(event);
   });
 
