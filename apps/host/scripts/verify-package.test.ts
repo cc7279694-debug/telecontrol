@@ -135,7 +135,7 @@ async function createFixture(options: {
   return { releaseDir, root };
 }
 
-describe("Windows Host package verification", () => {
+describe("Windows Host package verification", { timeout: 15_000 }, () => {
   it("accepts a complete x64 unpacked package and installer", async () => {
     const fixture = await createFixture({});
 

@@ -15,3 +15,5 @@ apps/host/public-runtime.json
 apps/host/.package-resources/
 apps/host/release/
 
+.vercel
+.env*

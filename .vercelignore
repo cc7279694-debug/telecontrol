@@ -1,0 +1,13 @@
+# The Vercel project builds only apps/web. Keep the Windows desktop bundle out
+# of the deployment upload because it is not needed by the web application.
+apps/host
+
+# Local build and test output.
+**/.next
+apps/web/dist
+**/release
+**/test-results
+**/coverage
+**/playwright-report
+**/node_modules
+.worktrees

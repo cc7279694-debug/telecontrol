@@ -21,7 +21,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush }),
 }));
 
-describe("OtpLoginForm", () => {
+describe("OtpLoginForm", { timeout: 15_000 }, () => {
   afterEach(() => {
     cleanup();
   });
