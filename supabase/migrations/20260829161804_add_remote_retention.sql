@@ -29,7 +29,12 @@ $function$;
 revoke all on function private.cleanup_remote_retention()
 from public, anon, authenticated, service_role;
 
-do $migration$
+create or replace function private.ensure_remote_retention_job()
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $function$
 declare
   existing_job_id bigint;
 begin
@@ -37,6 +42,7 @@ begin
     select jobid
     from cron.job
     where jobname = 'codex-remote-retention-hourly'
+      and username = current_user
   loop
     perform cron.unschedule(existing_job_id);
   end loop;
@@ -47,4 +53,9 @@ begin
     $$select private.cleanup_remote_retention();$$
   );
 end;
-$migration$;
+$function$;
+
+revoke all on function private.ensure_remote_retention_job()
+from public, anon, authenticated, service_role;
+
+select private.ensure_remote_retention_job();

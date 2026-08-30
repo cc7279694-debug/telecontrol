@@ -106,4 +106,20 @@ describe("encrypted remote transport migration contract", () => {
       "perform cron.schedule(\n    'codex-remote-retention-hourly'",
     );
   });
+
+  it("does not attempt to unschedule jobs owned by another database role", () => {
+    expect(retentionMigration).toContain(
+      "where jobname = 'codex-remote-retention-hourly'\n      and username = current_user",
+    );
+  });
+
+  it("keeps retention scheduling inside a private invoker function", () => {
+    expect(retentionMigration).toContain(
+      "create or replace function private.ensure_remote_retention_job()",
+    );
+    expect(retentionMigration).toContain("security invoker");
+    expect(retentionMigration).toContain(
+      "select private.ensure_remote_retention_job();",
+    );
+  });
 });

@@ -1,6 +1,6 @@
 begin;
 
-select plan(33);
+select plan(38);
 
 select ok(
   to_regclass('public.hosts') is not null,
@@ -190,6 +190,19 @@ select ok(
 );
 
 select ok(
+  exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'private'
+      and p.proname = 'ensure_remote_retention_job'
+      and not p.prosecdef
+      and p.proconfig @> array['search_path=""']
+  ),
+  'the retention scheduler is a private invoker function'
+);
+
+select ok(
   to_regclass('cron.job') is not null
   and (
     select count(*)
@@ -220,6 +233,41 @@ select ok(
       and not has_function_privilege('service_role', p.oid, 'execute')
   ),
   'only the scheduler owner can execute the retention helper'
+);
+
+grant usage on schema cron to service_role;
+set local role service_role;
+select lives_ok(
+  $$select cron.schedule(
+    'codex-remote-retention-hourly',
+    '17 * * * *',
+    'select 1;'
+  );$$,
+  'a different database role can own a same-name cron job'
+);
+reset role;
+
+select lives_ok(
+  $$select private.ensure_remote_retention_job();$$,
+  'retention scheduling ignores a same-name job owned by another role'
+);
+
+select is(
+  (select count(*)::integer
+   from cron.job
+   where jobname = 'codex-remote-retention-hourly'
+     and username = 'service_role'),
+  1,
+  'the other role cron job remains untouched'
+);
+
+select is(
+  (select count(*)::integer
+   from cron.job
+   where jobname = 'codex-remote-retention-hourly'
+     and username = 'postgres'),
+  1,
+  'the postgres retention job remains unique for its owner'
 );
 
 insert into auth.users (
