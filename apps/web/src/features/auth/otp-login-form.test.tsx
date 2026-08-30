@@ -96,6 +96,25 @@ describe("OtpLoginForm", { timeout: 15_000 }, () => {
     expect(routerPush).toHaveBeenCalledWith("/hosts");
   });
 
+  it("verifies an eight digit code sent by Supabase", async () => {
+    signInWithOtp.mockResolvedValue({ error: null });
+    verifyOtp.mockResolvedValue({ error: null });
+    const user = userEvent.setup();
+    render(<OtpLoginForm />);
+
+    await user.type(screen.getByLabelText("邮箱"), "owner@example.com");
+    await user.click(screen.getByRole("button", { name: "发送验证码" }));
+    await user.type(screen.getByLabelText("验证码"), "11449533");
+    await user.click(screen.getByRole("button", { name: "登录" }));
+
+    expect(verifyOtp).toHaveBeenCalledWith({
+      email: "owner@example.com",
+      token: "11449533",
+      type: "email",
+    });
+    expect(routerPush).toHaveBeenCalledWith("/hosts");
+  });
+
   it("translates rate limit errors into a concise Chinese message", async () => {
     signInWithOtp.mockResolvedValue({
       error: {

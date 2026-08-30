@@ -86,8 +86,8 @@ export function OtpLoginForm(): React.JSX.Element {
 
   async function verifyCode(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (!/^\d{6}$/.test(token)) {
-      setError("请输入6位验证码");
+    if (!/^\d{6,10}$/.test(token)) {
+      setError("请输入6-10位验证码");
       return;
     }
     setBusy(true);
@@ -211,7 +211,7 @@ export function OtpLoginForm(): React.JSX.Element {
               autoComplete="one-time-code"
               className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-center text-xl tracking-[0.45em] text-slate-950 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
               inputMode="numeric"
-              maxLength={6}
+              maxLength={10}
               onChange={(event) =>
                 setToken(event.target.value.replace(/\D/g, ""))
               }
