@@ -8,12 +8,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OtpLoginForm } from "./otp-login-form";
 
 const signInWithOtp = vi.fn();
+const signInWithPassword = vi.fn();
 const verifyOtp = vi.fn();
 const routerPush = vi.fn();
 
 vi.mock("../../lib/supabase/browser", () => ({
   createBrowserSupabaseClient: () => ({
-    auth: { signInWithOtp, verifyOtp },
+    auth: { signInWithOtp, signInWithPassword, verifyOtp },
   }),
 }));
 
@@ -28,6 +29,7 @@ describe("OtpLoginForm", { timeout: 15_000 }, () => {
 
   beforeEach(() => {
     signInWithOtp.mockReset();
+    signInWithPassword.mockReset();
     verifyOtp.mockReset();
     routerPush.mockReset();
   });
@@ -56,6 +58,23 @@ describe("OtpLoginForm", { timeout: 15_000 }, () => {
       options: { shouldCreateUser: false },
     });
     expect(screen.getByLabelText("验证码")).toBeInTheDocument();
+  });
+
+  it("logs in with an existing email and password", async () => {
+    signInWithPassword.mockResolvedValue({ error: null });
+    const user = userEvent.setup();
+    render(<OtpLoginForm />);
+
+    await user.click(screen.getByRole("button", { name: "使用密码登录" }));
+    await user.type(screen.getByLabelText("邮箱"), "owner@example.com");
+    await user.type(screen.getByLabelText("密码"), "correct-password");
+    await user.click(screen.getByRole("button", { name: "密码登录" }));
+
+    expect(signInWithPassword).toHaveBeenCalledWith({
+      email: "owner@example.com",
+      password: "correct-password",
+    });
+    expect(routerPush).toHaveBeenCalledWith("/hosts");
   });
 
   it("verifies a six digit code and navigates to hosts", async () => {
