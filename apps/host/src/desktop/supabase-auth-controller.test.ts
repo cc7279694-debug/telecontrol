@@ -261,6 +261,28 @@ describe("supabase auth controller", () => {
     );
   });
 
+  it("keeps the session id from the current access token when claims are stale", async () => {
+    const fixture = createFixture();
+    fixture.auth.verifyOtp.mockResolvedValueOnce({
+      data: { user, session: sessionWithFallbackClaim },
+      error: null,
+    });
+    fixture.auth.getClaims.mockResolvedValue({
+      data: { claims: { sub: user.id, session_id: "stale-session" } },
+      error: null,
+    });
+
+    await expect(
+      fixture.controller.verifyOtp("demo@example.com", "123456"),
+    ).resolves.toEqual({ ok: true, message: "登录成功" });
+    await expect(fixture.controller.getRuntimeSession()).resolves.toMatchObject(
+      {
+        ownerId: "user-1",
+        authSessionId: "session-fallback",
+      },
+    );
+  });
+
   it("exposes a main-process-only runtime session and refresh notifications", async () => {
     const fixture = createFixture();
     const listener = vi.fn();

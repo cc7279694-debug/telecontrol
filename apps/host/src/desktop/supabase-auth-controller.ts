@@ -204,7 +204,11 @@ export function createSupabaseAuthController({
     const ownerId =
       session.user.id || (typeof claims.sub === "string" ? claims.sub : null);
     const authSessionId =
-      typeof claims.session_id === "string" ? claims.session_id : null;
+      typeof fallbackClaims.session_id === "string"
+        ? fallbackClaims.session_id
+        : typeof claims.session_id === "string"
+          ? claims.session_id
+          : null;
     return { ownerId, authSessionId };
   }
 
