@@ -80,7 +80,7 @@ export const verifyOtpInputSchema = z
     token: z
       .string()
       .trim()
-      .regex(/^\d{6}$/, "验证码必须是六位数字"),
+      .regex(/^\d{6,10}$/, "验证码必须是6到10位数字"),
   })
   .strict();
 

@@ -316,10 +316,14 @@ export function App() {
                       <input
                         inputMode="numeric"
                         value={token}
-                        onChange={(event) => setToken(event.target.value)}
+                        onChange={(event) =>
+                          setToken(
+                            event.target.value.replace(/\D/g, "").slice(0, 10),
+                          )
+                        }
                         placeholder="输入验证码"
-                        maxLength={6}
-                        pattern="[0-9]{6}"
+                        maxLength={10}
+                        pattern="[0-9]{6,10}"
                         disabled={busy}
                         required
                       />

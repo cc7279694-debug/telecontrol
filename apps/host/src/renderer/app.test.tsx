@@ -98,6 +98,37 @@ describe("Host renderer", () => {
     );
   });
 
+  it("submits the complete eight-digit email OTP", async () => {
+    const api = {
+      getDesktopState: vi.fn(async () => stoppedState),
+      subscribeDesktopState: vi.fn(() => vi.fn()),
+      requestOtp: vi.fn(async () => ({
+        ok: true,
+        message: "验证码已发送",
+      })),
+      verifyOtp: vi.fn(async () => ({
+        ok: false,
+        message: "登录失败",
+      })),
+    } as unknown as DesktopApi;
+    Object.defineProperty(window, "codexRemoteHost", {
+      configurable: true,
+      value: api,
+    });
+
+    render(<App />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("邮箱"), "user@example.com");
+    await user.click(screen.getByRole("button", { name: "发送验证码" }));
+    await user.type(await screen.findByLabelText("邮箱验证码"), "12345678");
+    await user.click(screen.getByRole("button", { name: "完成登录" }));
+
+    expect(api.verifyOtp).toHaveBeenCalledWith({
+      email: "user@example.com",
+      token: "12345678",
+    });
+  });
+
   it("shows authorized projects and the pairing code controls for a signed-in Host", async () => {
     const signedInState: DesktopState = {
       ...stoppedState,

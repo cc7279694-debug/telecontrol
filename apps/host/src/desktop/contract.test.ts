@@ -121,6 +121,20 @@ describe("desktop contract", () => {
       }).success,
     ).toBe(true);
     expect(
+      verifyOtpInputSchema.safeParse({
+        email: "user@example.com",
+        token: "12345678",
+      }).success,
+    ).toBe(true);
+    for (const token of ["12345", "12345678901", "12345a"]) {
+      expect(
+        verifyOtpInputSchema.safeParse({
+          email: "user@example.com",
+          token,
+        }).success,
+      ).toBe(false);
+    }
+    expect(
       removeWorkspaceInputSchema.safeParse({ workspaceId: "not-a-uuid" })
         .success,
     ).toBe(false);
