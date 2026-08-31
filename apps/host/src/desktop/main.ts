@@ -39,6 +39,7 @@ import { createHostRegistry, HostRegistryError } from "./host-registry.js";
 import { loadPublicRuntimeConfig } from "./public-runtime-config.js";
 import { createSupabaseAuthController } from "./supabase-auth-controller.js";
 import { resolveHostRegistrationSession } from "./host-registration.js";
+import { runWorkspaceChoice } from "./workspace-choice-flow.js";
 import { createConfigStore, type HostConfig } from "./config-store.js";
 import {
   createWorkspaceAuthorizer,
@@ -358,33 +359,34 @@ if (process.argv.includes("--package-smoke")) {
       },
       chooseWorkspace: async () => {
         if (!workspaceAuthorizer) return unavailableActionResult;
-        if (!desktopState.host) {
-          const registration = await registerCurrentHost();
-          if (!registration.ok) return registration;
-        }
-        const selected = await dialog.showOpenDialog({
-          properties: ["openDirectory"],
+        const authorizer = workspaceAuthorizer;
+        return runWorkspaceChoice({
+          showDirectoryDialog: () =>
+            dialog.showOpenDialog({
+              properties: ["openDirectory"],
+            }),
+          hasRegisteredHost: () => Boolean(desktopState.host),
+          registerHost: registerCurrentHost,
+          addDirectory: async (directory) => {
+            try {
+              await authorizer.addDirectory(directory);
+              updateDesktopState({
+                ...desktopState,
+                workspaces: authorizer.list(),
+                notice: "项目已添加",
+              });
+              return { ok: true, message: "项目已添加" };
+            } catch (error) {
+              return {
+                ok: false,
+                message:
+                  error instanceof WorkspaceAuthorizerError
+                    ? error.message
+                    : "添加项目失败，请稍后重试",
+              };
+            }
+          },
         });
-        if (selected.canceled || !selected.filePaths[0]) {
-          return { ok: false, message: "已取消添加项目" };
-        }
-        try {
-          await workspaceAuthorizer.addDirectory(selected.filePaths[0]);
-          updateDesktopState({
-            ...desktopState,
-            workspaces: workspaceAuthorizer.list(),
-            notice: "项目已添加",
-          });
-          return { ok: true, message: "项目已添加" };
-        } catch (error) {
-          return {
-            ok: false,
-            message:
-              error instanceof WorkspaceAuthorizerError
-                ? error.message
-                : "添加项目失败，请稍后重试",
-          };
-        }
       },
       removeWorkspace: async ({ workspaceId }) => {
         if (!workspaceAuthorizer) return unavailableActionResult;

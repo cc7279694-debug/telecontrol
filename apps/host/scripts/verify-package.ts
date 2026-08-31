@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { extractFile, listPackage } from "@electron/asar";
 import { loadPublicRuntimeConfig } from "../src/desktop/public-runtime-config.js";
 
-const EXPECTED_APP_VERSION = "0.1.7" as const;
+const EXPECTED_APP_VERSION = "0.1.8" as const;
 const EXPECTED_CLI_VERSION = "0.149.0" as const;
 const EXPECTED_PLATFORM_VERSION = "0.149.0-win32-x64" as const;
 const EXPECTED_PROTOCOL_VERSION = "0.1.0" as const;
