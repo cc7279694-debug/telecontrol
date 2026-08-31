@@ -290,4 +290,24 @@ describe("supabase auth controller", () => {
     fixture.emitAuthStateChange("SIGNED_OUT", null);
     await vi.waitFor(() => expect(listener).toHaveBeenLastCalledWith(null));
   });
+
+  it("passes a runtime JWT through Supabase's accessToken option", async () => {
+    const fixture = createFixture();
+
+    fixture.controller.getClientWithAccessToken("runtime-access-token");
+
+    expect(fixture.getClientOptions()).toMatchObject({
+      accessToken: expect.any(Function),
+    });
+    await expect(
+      (
+        fixture.getClientOptions() as {
+          accessToken: () => Promise<string>;
+        }
+      ).accessToken(),
+    ).resolves.toBe("runtime-access-token");
+    expect(fixture.getClientOptions()).not.toHaveProperty(
+      "global.headers.Authorization",
+    );
+  });
 });
