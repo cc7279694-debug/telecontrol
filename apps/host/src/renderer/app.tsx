@@ -375,7 +375,6 @@ export function App() {
                         onClick={() => void handleStartHost()}
                         disabled={
                           busy ||
-                          !desktopState.host ||
                           desktopState.hostStatus === "starting" ||
                           desktopState.hostStatus === "stopping"
                         }

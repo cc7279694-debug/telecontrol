@@ -225,6 +225,41 @@ describe("Host renderer", () => {
     expect(api.startHost).toHaveBeenCalledOnce();
   });
 
+  it("allows retrying Host startup while cloud registration is pending", async () => {
+    const api = {
+      getDesktopState: vi.fn(async () => ({
+        ...stoppedState,
+        authStatus: "signed-in",
+        host: null,
+        workspaces: [
+          {
+            id: "22222222-2222-4222-8222-222222222222",
+            name: "演示项目",
+            path: "C:\\Projects\\demo",
+          },
+        ],
+      })),
+      subscribeDesktopState: vi.fn(() => vi.fn()),
+      startHost: vi.fn(async () => ({
+        ok: false,
+        message: "无法保存 Host 注册状态",
+      })),
+    } as unknown as DesktopApi;
+    Object.defineProperty(window, "codexRemoteHost", {
+      configurable: true,
+      value: api,
+    });
+
+    render(<App />);
+    const user = userEvent.setup();
+    const button = await screen.findByRole("button", { name: "启动 Host" });
+
+    expect(button).toBeEnabled();
+    await user.click(button);
+
+    expect(api.startHost).toHaveBeenCalledOnce();
+  });
+
   it("exposes Doctor, startup and log controls for a signed-in Host", async () => {
     const api = {
       getDesktopState: vi.fn(async () => ({

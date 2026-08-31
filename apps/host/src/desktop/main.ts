@@ -424,6 +424,10 @@ if (process.argv.includes("--package-smoke")) {
       },
       startHost: async () => {
         if (!runtimeController) return unavailableActionResult;
+        if (!desktopState.host) {
+          const registration = await registerCurrentHost();
+          if (!registration.ok) return registration;
+        }
         const result = await runtimeController.start();
         updateDesktopState({
           ...desktopState,
