@@ -24,7 +24,7 @@ describe("CodexEventMapper", () => {
     });
   });
 
-  it("marks unknown or externally running threads read-only", () => {
+  it("keeps Host-owned threads writable when the server adds an unknown state", () => {
     const mapper = new CodexEventMapper();
 
     expect(
@@ -32,7 +32,7 @@ describe("CodexEventMapper", () => {
         { id: "thread-2", status: "something-new" },
         { workspaceId: "workspace-1", readOnly: false },
       ),
-    ).toMatchObject({ state: "unknown", readOnly: true });
+    ).toMatchObject({ state: "unknown", readOnly: false });
 
     expect(
       mapper.threadSummary(
@@ -40,6 +40,13 @@ describe("CodexEventMapper", () => {
         { workspaceId: "workspace-1", readOnly: true },
       ),
     ).toMatchObject({ state: "running", readOnly: true });
+
+    expect(
+      mapper.threadSummary(
+        { status: "completed" },
+        { workspaceId: "workspace-1", readOnly: false },
+      ),
+    ).toMatchObject({ id: "unknown", readOnly: true });
   });
 
   it("only exposes sanitized approval display metadata", () => {

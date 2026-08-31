@@ -50,7 +50,6 @@ export class CodexEventMapper {
     const state = normalizeState(record);
     const id =
       stringValue(record.id) ?? stringValue(record.threadId) ?? "unknown";
-    const known = id !== "unknown" && state !== "unknown";
     return {
       id,
       workspaceId: options.workspaceId,
@@ -58,7 +57,11 @@ export class CodexEventMapper {
         stringValue(record.title) ?? stringValue(record.name) ?? "未命名会话",
       updatedAt: dateValue(record.updatedAt) ?? new Date().toISOString(),
       state,
-      readOnly: options.readOnly || !known,
+      // The App Server's thread response may omit or add a state value that
+      // this adapter does not know yet. Ownership, not an unfamiliar state,
+      // determines whether a Host-created thread can accept a turn. Unknown
+      // identifiers still fail closed and remain read-only.
+      readOnly: options.readOnly || id === "unknown",
     };
   }
 
