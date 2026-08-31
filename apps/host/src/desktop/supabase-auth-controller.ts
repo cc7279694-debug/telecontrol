@@ -400,5 +400,14 @@ export function createSupabaseAuthController({
     onRuntimeSessionChanged,
     getSnapshot: () => snapshot,
     getClient: () => client,
+    getClientWithAccessToken: (accessToken: string) =>
+      clientFactory(runtimeConfig.supabaseUrl, runtimeConfig.publishableKey, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+          detectSessionInUrl: false,
+        },
+        global: { headers: { Authorization: `Bearer ${accessToken}` } },
+      }),
   };
 }

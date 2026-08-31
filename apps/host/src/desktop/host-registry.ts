@@ -20,6 +20,25 @@ type Query = {
 };
 
 type RegistryClient = { from: (table: "hosts") => unknown };
+type RegistryClientFactory = (accessToken: string) => RegistryClient;
+
+function providerErrorCode(error: unknown) {
+  if (typeof error !== "object" || error === null) return undefined;
+  const candidate = error as { code?: unknown; status?: unknown };
+  const code =
+    typeof candidate.code === "string" &&
+    /^[A-Za-z0-9_.-]{1,40}$/.test(candidate.code)
+      ? candidate.code
+      : undefined;
+  const status =
+    typeof candidate.status === "number" &&
+    Number.isInteger(candidate.status) &&
+    candidate.status >= 100 &&
+    candidate.status <= 599
+      ? `http_${candidate.status}`
+      : undefined;
+  return [code, status].filter(Boolean).join("_") || undefined;
+}
 
 export type RegisteredHost = {
   id: string;
@@ -42,7 +61,10 @@ export type HostRegistryErrorCode =
   | "HOST_WRITE_FAILED";
 
 export class HostRegistryError extends Error {
-  constructor(readonly code: HostRegistryErrorCode) {
+  constructor(
+    readonly code: HostRegistryErrorCode,
+    readonly providerCode?: string,
+  ) {
     super(
       {
         HOST_QUERY_FAILED: "无法读取 Host 注册状态",
@@ -98,8 +120,10 @@ export function createHostRegistry({
   hostName,
   version,
   protocolVersion,
+  clientFactory,
 }: {
   client: RegistryClient;
+  clientFactory?: RegistryClientFactory;
   hostKeyManager: Pick<
     { getOrCreate: () => Promise<HostKeyPair> },
     "getOrCreate"
@@ -111,17 +135,24 @@ export function createHostRegistry({
   async function ensureRegistered({
     ownerId,
     authSessionId,
+    accessToken,
   }: {
     ownerId: string;
     authSessionId: string;
+    accessToken?: string;
   }) {
+    const registryClient =
+      accessToken && clientFactory ? clientFactory(accessToken) : client;
     const keyPair = await hostKeyManager.getOrCreate();
-    const query = (client.from("hosts") as Query)
+    const query = (registryClient.from("hosts") as Query)
       .select("id,name,public_key,version,protocol_version,revoked_at")
       .eq("owner_id", ownerId);
     const listed = await query.limit(3);
     if (listed.error) {
-      throw new HostRegistryError("HOST_QUERY_FAILED");
+      throw new HostRegistryError(
+        "HOST_QUERY_FAILED",
+        providerErrorCode(listed.error),
+      );
     }
     const rows = listed.data ?? [];
     const activeRows = rows.filter((row) => !row.revoked_at);
@@ -145,16 +176,19 @@ export function createHostRegistry({
       ) {
         throw new HostRegistryError("HOST_KEY_MISMATCH");
       }
-      const updated = await (client.from("hosts") as Query)
+      const updated = await (registryClient.from("hosts") as Query)
         .update({ auth_session_id: authSessionId, version })
         .eq("id", existing.id);
       if (updated && "error" in updated && updated.error) {
-        throw new HostRegistryError("HOST_WRITE_FAILED");
+        throw new HostRegistryError(
+          "HOST_WRITE_FAILED",
+          providerErrorCode(updated.error),
+        );
       }
       return toRegisteredHost(existing);
     }
 
-    const inserted = await (client.from("hosts") as Query)
+    const inserted = await (registryClient.from("hosts") as Query)
       .insert({
         owner_id: ownerId,
         auth_session_id: authSessionId,
@@ -166,7 +200,10 @@ export function createHostRegistry({
       .select("id,name,public_key,version,protocol_version,revoked_at")
       .single();
     if (inserted.error || !inserted.data) {
-      throw new HostRegistryError("HOST_WRITE_FAILED");
+      throw new HostRegistryError(
+        "HOST_WRITE_FAILED",
+        providerErrorCode(inserted.error),
+      );
     }
     return toRegisteredHost(inserted.data);
   }

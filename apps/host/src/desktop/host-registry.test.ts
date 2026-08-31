@@ -101,6 +101,73 @@ describe("host registry", () => {
     } satisfies Partial<HostRegistryError>);
   });
 
+  it("uses the explicit current access token client for registration", async () => {
+    const fixture = createFixture([]);
+    const clientFactory = vi.fn(() => fixture.client);
+    const registry = createHostRegistry({
+      client: {
+        from: vi.fn(() => {
+          throw new Error("default client should not be used");
+        }),
+      },
+      clientFactory,
+      hostKeyManager: {
+        getOrCreate: vi.fn(async () => ({
+          privateKeyJwk: { ...publicKey, d: "private-d" },
+          publicKeyJwk: publicKey,
+        })),
+      },
+      hostName: "Windows Host",
+      version: "0.1.0",
+      protocolVersion: 1,
+    });
+
+    await expect(
+      registry.ensureRegistered({
+        ownerId: "owner-1",
+        authSessionId: "session-1",
+        accessToken: "access-token",
+      }),
+    ).resolves.toMatchObject({ id: "host-new" });
+    expect(clientFactory).toHaveBeenCalledWith("access-token");
+  });
+
+  it("keeps a safe provider error code for diagnostics", async () => {
+    const fixture = createFixture([]);
+    fixture.client = {
+      from: vi.fn(() => ({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        limit: vi.fn(async () => ({
+          data: null,
+          error: { code: "PGRST301", status: 401, message: "Bearer token" },
+        })),
+      })),
+    } as never;
+    const registry = createHostRegistry({
+      client: fixture.client,
+      hostKeyManager: {
+        getOrCreate: vi.fn(async () => ({
+          privateKeyJwk: { ...publicKey, d: "private-d" },
+          publicKeyJwk: publicKey,
+        })),
+      },
+      hostName: "Windows Host",
+      version: "0.1.0",
+      protocolVersion: 1,
+    });
+
+    await expect(
+      registry.ensureRegistered({
+        ownerId: "owner-1",
+        authSessionId: "session-1",
+      }),
+    ).rejects.toMatchObject({
+      code: "HOST_QUERY_FAILED",
+      providerCode: "PGRST301_http_401",
+    });
+  });
+
   it("updates an existing matching Host with a new update query", async () => {
     const { fixture, registry } = createRegistry([
       {

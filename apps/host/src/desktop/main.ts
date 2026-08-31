@@ -234,9 +234,18 @@ if (process.argv.includes("--package-smoke")) {
         return { ok: false as const, message: "登录状态不完整，请重新登录" };
       }
       try {
+        const runtimeSession = await controller.getRuntimeSession();
+        if (
+          !runtimeSession ||
+          runtimeSession.ownerId !== snapshot.ownerId ||
+          !runtimeSession.accessToken
+        ) {
+          return { ok: false as const, message: "登录状态不完整，请重新登录" };
+        }
         const host = await hostRegistry.ensureRegistered({
           ownerId: snapshot.ownerId,
           authSessionId: snapshot.authSessionId,
+          accessToken: runtimeSession.accessToken,
         });
         updateDesktopState({
           ...desktopState,
@@ -269,6 +278,13 @@ if (process.argv.includes("--package-smoke")) {
 
         return { ok: true as const, message: "登录成功" };
       } catch (error) {
+        redactedLogger?.error("host_registration_failed", {
+          result: "failed",
+          errorCode:
+            error instanceof HostRegistryError
+              ? [error.code, error.providerCode].filter(Boolean).join(":")
+              : "host_registration_unknown",
+        });
         const message =
           error instanceof HostRegistryError
             ? error.message
@@ -741,6 +757,8 @@ if (process.argv.includes("--package-smoke")) {
         });
         hostRegistry = createHostRegistry({
           client: authController.getClient() as never,
+          clientFactory: (accessToken) =>
+            authController!.getClientWithAccessToken(accessToken) as never,
           hostKeyManager,
           hostName: "Windows Host",
           version: app.getVersion(),
