@@ -59,11 +59,8 @@ import { createCodexAppServerProcess } from "../codex-process.js";
 import { RemoteCommandRunner } from "../remote-command-runner.js";
 import { RemoteThreadStore } from "../remote-thread-store.js";
 import { createRotatingWebhookNotificationSink } from "../webhook-notification-sink.js";
-import {
-  asSupabaseTransportClient,
-  SupabaseTransport,
-} from "../supabase-transport.js";
 import type { RuntimeTransport } from "./host-runtime-controller.js";
+import { createAuthenticatedSupabaseTransport } from "./runtime-transport-client.js";
 
 declare global {
   var __codexRemoteE2e: E2eControl | undefined;
@@ -829,9 +826,9 @@ if (process.argv.includes("--package-smoke")) {
               onError: (handler) => processHandle.onError(() => handler()),
             };
           },
-          createTransport: () =>
-            new SupabaseTransport(
-              asSupabaseTransportClient(authController!.getClient()),
+          createTransport: (session) =>
+            createAuthenticatedSupabaseTransport(session, (accessToken) =>
+              authController!.getClientWithAccessToken(accessToken),
             ) as unknown as RuntimeTransport,
           createRunner: ({
             adapter,
