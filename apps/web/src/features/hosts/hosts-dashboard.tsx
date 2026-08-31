@@ -150,51 +150,64 @@ function ConnectedDashboard({
 
   return (
     <AppShell>
-      <div className="space-y-5">
-        <Card>
-          <CardHeader>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm text-zinc-500">Windows 电脑</p>
-                <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-950">
-                  {host.hostName}
-                </h1>
+      <div className="space-y-8">
+        <Card className="overflow-hidden">
+          <div className="grid lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
+            <CardHeader className="p-6 pb-6 sm:p-8 lg:pb-8">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                    Windows 电脑
+                  </p>
+                  <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+                    {host.hostName}
+                  </h1>
+                  <p className="mt-3 max-w-xs text-sm leading-6 text-zinc-500 dark:text-zinc-400">
+                    电脑在线，可以从手机远程启动和管理 Codex 任务。
+                  </p>
+                </div>
+                <Badge tone={offline ? "warning" : "success"}>
+                  {offline ? "离线" : "在线"}
+                </Badge>
               </div>
-              <Badge tone={offline ? "warning" : "success"}>
-                {offline ? "离线" : "在线"}
-              </Badge>
-            </div>
-            {offlineMessage ? (
-              <p className="mt-3 text-sm text-amber-800" role="status">
-                {offlineMessage}
-              </p>
-            ) : null}
-          </CardHeader>
-          <CardContent>
-            {workspaces.length > 0 ? (
-              <WorkspaceSwitcher
-                workspaces={workspaces}
-                value={selectedWorkspaceId ?? ""}
-                onChange={setSavedWorkspaceId}
-              />
-            ) : (
-              <p className="text-sm text-zinc-600">
-                Windows Host 还没有授权项目。
-              </p>
-            )}
-            <PushNotificationSettings deviceId={host.deviceId} />
-          </CardContent>
+              {offlineMessage ? (
+                <p className="mt-3 text-sm text-amber-800" role="status">
+                  {offlineMessage}
+                </p>
+              ) : null}
+            </CardHeader>
+            <CardContent className="border-t border-zinc-100 p-6 dark:border-white/10 sm:p-8 lg:border-l lg:border-t-0">
+              {workspaces.length > 0 ? (
+                <WorkspaceSwitcher
+                  workspaces={workspaces}
+                  value={selectedWorkspaceId ?? ""}
+                  onChange={setSavedWorkspaceId}
+                />
+              ) : (
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                  Windows Host 还没有授权项目。
+                </p>
+              )}
+              <PushNotificationSettings deviceId={host.deviceId} />
+            </CardContent>
+          </div>
         </Card>
         <section aria-labelledby="thread-list-title">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2
-              id="thread-list-title"
-              className="text-lg font-semibold text-zinc-950"
-            >
-              任务
-            </h2>
+          <div className="mb-4 flex items-end justify-between gap-3">
+            <div>
+              <h2
+                id="thread-list-title"
+                className="text-xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50"
+              >
+                任务
+              </h2>
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                查看和继续这台电脑上的远程会话
+              </p>
+            </div>
             <Button
               variant="secondary"
+              className="shrink-0"
               disabled={offline || !selectedWorkspace}
               onClick={() => threadList.reload()}
             >
@@ -213,7 +226,7 @@ function ConnectedDashboard({
             onLoadMore={threadList.loadMore}
           />
           <Button
-            className="mt-4 w-full"
+            className="mt-5 w-full sm:w-auto sm:px-8"
             disabled={offline || !selectedWorkspace}
             onClick={() => setNewThreadOpen(true)}
           >

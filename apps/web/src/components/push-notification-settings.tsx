@@ -78,36 +78,71 @@ export function PushNotificationSettings({ deviceId }: { deviceId: string }) {
     }
   }
 
+  const enabled = status === "enabled";
+  const busy = status === "loading";
+  const displayStatus = busy ? "处理中" : enabled ? "已开启" : "未开启";
+
   return (
-    <div className="mt-5 border-t border-zinc-100 pt-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-zinc-900">锁屏通知</p>
-          <p className="mt-1 text-xs leading-5 text-zinc-500">
+    <div className="mt-6 border-t border-zinc-200/80 pt-5 dark:border-white/10">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p
+            className="text-sm font-semibold text-zinc-950 dark:text-zinc-100"
+            id="push-notification-label"
+          >
+            锁屏通知
+          </p>
+          <p
+            className="mt-1 max-w-xl text-xs leading-5 text-zinc-500 dark:text-zinc-400"
+            id="push-notification-description"
+          >
             只提醒审批、完成和失败，不显示命令、路径或代码。
           </p>
         </div>
-        {status === "enabled" ? (
-          <button
-            className="min-h-11 rounded-xl border border-zinc-200 px-3 text-sm font-semibold text-zinc-700"
-            type="button"
-            onClick={() => void disable()}
+        <div className="flex shrink-0 items-center gap-3">
+          <span
+            className="whitespace-nowrap text-xs font-semibold text-zinc-500 dark:text-zinc-400"
+            aria-live="polite"
           >
-            关闭
-          </button>
-        ) : (
+            {displayStatus}
+          </span>
           <button
-            className="min-h-11 rounded-xl bg-zinc-950 px-3 text-sm font-semibold text-white disabled:bg-zinc-400"
+            aria-checked={enabled}
+            aria-describedby="push-notification-description"
+            aria-labelledby="push-notification-label"
+            className="relative inline-flex min-h-11 min-w-[52px] shrink-0 items-center justify-center rounded-full whitespace-nowrap outline-none transition focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-wait disabled:opacity-60 dark:focus-visible:ring-offset-zinc-900"
+            data-state={enabled ? "checked" : "unchecked"}
+            disabled={busy}
+            role="switch"
             type="button"
-            onClick={() => void enable()}
-            disabled={status === "loading"}
+            onClick={() => {
+              if (enabled) {
+                void disable();
+              } else {
+                void enable();
+              }
+            }}
           >
-            {status === "loading" ? "处理中…" : "开启"}
+            <span
+              aria-hidden="true"
+              className={`relative block h-7 w-12 rounded-full p-1 transition-colors ${
+                enabled ? "bg-blue-600" : "bg-zinc-300 dark:bg-zinc-700"
+              }`}
+            >
+              <span
+                className={`block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                  enabled ? "translate-x-5" : "translate-x-0"
+                }`}
+              />
+            </span>
           </button>
-        )}
+        </div>
       </div>
       {message ? (
-        <p className="mt-2 text-xs text-zinc-600" role="status">
+        <p
+          className="mt-3 text-xs text-zinc-600 dark:text-zinc-400"
+          role="status"
+        >
           {message}
         </p>
       ) : null}

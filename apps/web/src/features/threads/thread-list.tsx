@@ -42,9 +42,14 @@ export function ThreadList({
   }
   if (threads.length === 0) {
     return (
-      <p className="rounded-2xl bg-zinc-50 p-5 text-sm text-zinc-600">
-        还没有任务
-      </p>
+      <div className="rounded-2xl border border-dashed border-zinc-300 bg-white/70 px-5 py-9 text-center dark:border-white/10 dark:bg-zinc-900/60">
+        <p className="text-base font-semibold text-zinc-800 dark:text-zinc-200">
+          还没有任务
+        </p>
+        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+          新建一个任务，开始远程操作
+        </p>
+      </div>
     );
   }
   return (

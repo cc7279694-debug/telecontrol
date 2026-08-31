@@ -15,7 +15,8 @@ export function ThemeToggle() {
   return (
     <Button
       aria-label="切换主题"
-      variant="ghost"
+      className="min-w-[60px] px-3"
+      variant="secondary"
       disabled={!mounted}
       onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
     >
