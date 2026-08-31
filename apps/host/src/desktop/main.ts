@@ -38,6 +38,7 @@ import { createHostKeyManager } from "./host-key-manager.js";
 import { createHostRegistry, HostRegistryError } from "./host-registry.js";
 import { loadPublicRuntimeConfig } from "./public-runtime-config.js";
 import { createSupabaseAuthController } from "./supabase-auth-controller.js";
+import { resolveHostRegistrationSession } from "./host-registration.js";
 import { createConfigStore, type HostConfig } from "./config-store.js";
 import {
   createWorkspaceAuthorizer,
@@ -224,28 +225,24 @@ if (process.argv.includes("--package-smoke")) {
     async function registerCurrentHost() {
       const controller = authController;
       const snapshot = controller?.getSnapshot();
-      if (
-        !controller ||
-        !snapshot?.signedIn ||
-        !snapshot.ownerId ||
-        !snapshot.authSessionId ||
-        !hostRegistry
-      ) {
+      if (!controller || !snapshot || !hostRegistry) {
         return { ok: false as const, message: "登录状态不完整，请重新登录" };
       }
       try {
         const runtimeSession = await controller.getRuntimeSession();
-        if (
-          !runtimeSession ||
-          runtimeSession.ownerId !== snapshot.ownerId ||
-          !runtimeSession.accessToken
-        ) {
+        const registrationSession = resolveHostRegistrationSession({
+          signedIn: snapshot.signedIn,
+          snapshotOwnerId: snapshot.ownerId,
+          snapshotAuthSessionId: snapshot.authSessionId,
+          runtimeSession,
+        });
+        if (!registrationSession) {
           return { ok: false as const, message: "登录状态不完整，请重新登录" };
         }
         const host = await hostRegistry.ensureRegistered({
-          ownerId: snapshot.ownerId,
-          authSessionId: snapshot.authSessionId,
-          accessToken: runtimeSession.accessToken,
+          ownerId: registrationSession.ownerId,
+          authSessionId: registrationSession.authSessionId,
+          accessToken: registrationSession.accessToken,
         });
         updateDesktopState({
           ...desktopState,
