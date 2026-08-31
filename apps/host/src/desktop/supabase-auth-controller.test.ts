@@ -13,6 +13,13 @@ const session = {
   user,
 } as Session;
 
+const sessionWithFallbackClaim = {
+  ...session,
+  access_token: `header.${Buffer.from(
+    JSON.stringify({ session_id: "session-fallback" }),
+  ).toString("base64url")}.signature`,
+} as Session;
+
 function createFixture() {
   let storedSession: Session | null = null;
   let authStateChangeCallback:
@@ -233,6 +240,25 @@ describe("supabase auth controller", () => {
       message: "已退出登录",
     });
     expect(fixture.credentialStore.remove).toHaveBeenCalled();
+  });
+
+  it("keeps the verified session when the JWKS claims lookup times out", async () => {
+    const fixture = createFixture();
+    fixture.auth.getClaims.mockRejectedValue(new Error("JWKS request timeout"));
+    fixture.auth.verifyOtp.mockResolvedValueOnce({
+      data: { user, session: sessionWithFallbackClaim },
+      error: null,
+    });
+
+    await expect(
+      fixture.controller.verifyOtp("demo@example.com", "123456"),
+    ).resolves.toEqual({ ok: true, message: "登录成功" });
+    await expect(fixture.controller.getRuntimeSession()).resolves.toMatchObject(
+      {
+        ownerId: "user-1",
+        authSessionId: "session-fallback",
+      },
+    );
   });
 
   it("exposes a main-process-only runtime session and refresh notifications", async () => {

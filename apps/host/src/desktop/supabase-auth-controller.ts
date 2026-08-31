@@ -194,8 +194,12 @@ export function createSupabaseAuthController({
     const fallbackClaims = tokenClaims(session.access_token);
     let claims = fallbackClaims;
     if (client.auth.getClaims) {
-      const result = await client.auth.getClaims();
-      if (!result.error && result.data.claims) claims = result.data.claims;
+      try {
+        const result = await client.auth.getClaims();
+        if (!result.error && result.data.claims) claims = result.data.claims;
+      } catch {
+        // 某些网络环境无法及时访问 JWKS，使用已由 Auth 服务验证的会话载荷。
+      }
     }
     const ownerId =
       session.user.id || (typeof claims.sub === "string" ? claims.sub : null);
