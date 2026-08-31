@@ -31,7 +31,8 @@ export const HostConfigSchema = z
         publicKey: z.string().trim().min(1).max(4_096),
         protocolVersion: z.number().int().positive(),
       })
-      .strict(),
+      .strict()
+      .nullable(),
     workspaces: z.array(WorkspaceConfigSchema).max(100),
     openAtLogin: z.boolean(),
     installedVersion: z.string().trim().min(1).max(64),

@@ -712,18 +712,27 @@ if (process.argv.includes("--package-smoke")) {
         workspaceAuthorizer = createWorkspaceAuthorizer({
           initialWorkspaces: localConfig?.workspaces ?? [],
           save: async (workspaces) => {
-            if (!configStore || !desktopState.host || !hostKeyManager) {
-              throw new Error("Host 尚未登录");
+            if (!configStore) {
+              throw new Error("本地配置尚未准备好");
             }
-            const keyPair = await hostKeyManager.getOrCreate();
+
+            const savedHost = desktopState.host ?? localConfig?.host ?? null;
+            const keyPair =
+              savedHost && hostKeyManager
+                ? await hostKeyManager.getOrCreate()
+                : null;
             localConfig = {
               schemaVersion: 1,
-              host: {
-                id: desktopState.host.id,
-                name: desktopState.host.name,
-                publicKey: JSON.stringify(keyPair.publicKeyJwk),
-                protocolVersion: desktopState.host.protocolVersion,
-              },
+              host: savedHost
+                ? {
+                    id: savedHost.id,
+                    name: savedHost.name,
+                    publicKey: keyPair
+                      ? JSON.stringify(keyPair.publicKeyJwk)
+                      : (localConfig?.host?.publicKey ?? ""),
+                    protocolVersion: savedHost.protocolVersion,
+                  }
+                : null,
               workspaces,
               openAtLogin: localConfig?.openAtLogin ?? false,
               installedVersion:

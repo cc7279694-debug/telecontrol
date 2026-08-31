@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { runWorkspaceChoice } from "./workspace-choice-flow.js";
 
 describe("workspace choice flow", () => {
-  it("opens the directory picker before registering the host", async () => {
+  it("saves the directory before registering the host", async () => {
     const events: string[] = [];
 
     const result = await runWorkspaceChoice({
@@ -22,7 +22,7 @@ describe("workspace choice flow", () => {
     });
 
     expect(result).toEqual({ ok: true, message: "项目已添加" });
-    expect(events).toEqual(["dialog", "register", "add"]);
+    expect(events).toEqual(["dialog", "add", "register"]);
   });
 
   it("does not register or add a workspace when the picker is cancelled", async () => {
@@ -41,8 +41,9 @@ describe("workspace choice flow", () => {
     expect(addDirectory).not.toHaveBeenCalled();
   });
 
-  it("returns registration errors after the user selected a directory", async () => {
+  it("keeps the selected directory when host registration fails", async () => {
     const addDirectory = vi.fn(async () => ({ ok: true, message: "已添加" }));
+    const events: string[] = [];
 
     const result = await runWorkspaceChoice({
       showDirectoryDialog: async () => ({
@@ -50,14 +51,18 @@ describe("workspace choice flow", () => {
         filePaths: ["C:\\project"],
       }),
       hasRegisteredHost: () => false,
-      registerHost: async () => ({
-        ok: false,
-        message: "无法保存 Host 注册状态",
-      }),
+      registerHost: async () => {
+        events.push("register");
+        return { ok: false, message: "无法保存 Host 注册状态" };
+      },
       addDirectory,
     });
 
-    expect(result).toEqual({ ok: false, message: "无法保存 Host 注册状态" });
-    expect(addDirectory).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      ok: true,
+      message: "项目已添加，但 Host 尚未连接，远程控制暂不可用",
+    });
+    expect(addDirectory).toHaveBeenCalledWith("C:\\project");
+    expect(events).toEqual(["register"]);
   });
 });

@@ -9,8 +9,9 @@ export type WorkspaceDirectorySelection = {
 };
 
 /**
- * Keeps the local folder picker responsive even when cloud registration fails.
- * Registration still happens before the directory is persisted for remote use.
+ * Keeps a local project selection from being lost when cloud registration fails.
+ * The local authorization is useful on its own, while remote control stays
+ * unavailable until the Host can register successfully.
  */
 export async function runWorkspaceChoice({
   showDirectoryDialog,
@@ -29,10 +30,18 @@ export async function runWorkspaceChoice({
     return { ok: false, message: "已取消添加项目" };
   }
 
+  const added = await addDirectory(directory);
+  if (!added.ok) return added;
+
   if (!hasRegisteredHost()) {
     const registration = await registerHost();
-    if (!registration.ok) return registration;
+    if (!registration.ok) {
+      return {
+        ok: true,
+        message: "项目已添加，但 Host 尚未连接，远程控制暂不可用",
+      };
+    }
   }
 
-  return addDirectory(directory);
+  return added;
 }

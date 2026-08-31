@@ -75,6 +75,20 @@ describe("config store", () => {
     expect(fileSystem.renames[0]?.to).toContain("config.v1.json");
   });
 
+  it("stores authorized workspaces before the Host has registered", async () => {
+    const fileSystem = new MemoryConfigFileSystem();
+    const store = createStore(fileSystem);
+    const localOnlyConfig: HostConfig = {
+      ...config,
+      host: null,
+      workspaces: [],
+    };
+
+    await store.write(localOnlyConfig);
+
+    await expect(store.read()).resolves.toEqual(localOnlyConfig);
+  });
+
   it("returns null for a missing config and preserves the last valid file after a failed replace", async () => {
     const fileSystem = new MemoryConfigFileSystem();
     const store = createStore(fileSystem);
