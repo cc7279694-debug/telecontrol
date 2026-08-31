@@ -64,11 +64,13 @@ export function RemoteProvider({
           }
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!disposed) {
+          const message =
+            error instanceof Error ? error.message : "连接电脑失败，请重试";
           onConnectionStateChange?.({
             status: "error",
-            message: "连接电脑失败，请重试",
+            message,
           });
           dispatch({
             type: "error",
@@ -76,7 +78,7 @@ export function RemoteProvider({
               type: "error",
               requestMessageId: crypto.randomUUID(),
               code: "connect_failed",
-              message: "连接电脑失败，请重试",
+              message,
             },
           });
         }

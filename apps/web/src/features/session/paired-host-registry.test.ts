@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DeviceIdentityStore } from "../device/device-key-store";
+import type {
+  DeviceIdentity,
+  DeviceIdentityStore,
+} from "../device/device-key-store";
 import { PairedHostRegistry } from "./paired-host-registry";
 
 function createQuery<T>(
@@ -40,23 +43,49 @@ function createFixture(options?: {
       table === "host_device_links" ? linkQuery : hostQuery,
     ),
   };
+  const identity = Object.hasOwn(options ?? {}, "identity")
+    ? (options?.identity ?? null)
+    : { deviceId: "device-1" };
   const store = {
-    load: vi.fn(async () =>
-      Object.hasOwn(options ?? {}, "identity")
-        ? (options?.identity ?? null)
-        : { deviceId: "device-1" },
-    ),
+    load: vi.fn(async () => identity),
   } as unknown as DeviceIdentityStore;
-  return { client, store, linkQuery, hostQuery };
+  return {
+    client,
+    store,
+    linkQuery,
+    hostQuery,
+    refreshedIdentity: identity
+      ? ({ ...identity, ownerId: "owner-1" } as DeviceIdentity)
+      : null,
+  };
+}
+
+function createRegistry(
+  fixture: ReturnType<typeof createFixture>,
+  refreshSession = vi.fn(async () => fixture.refreshedIdentity),
+) {
+  return Reflect.construct(PairedHostRegistry, [
+    fixture.client,
+    fixture.store,
+    { refreshSession },
+  ]) as PairedHostRegistry;
 }
 
 describe("PairedHostRegistry", () => {
+  it("refreshes the device session before loading a paired Host", async () => {
+    const fixture = createFixture();
+    const refreshSession = vi.fn(async () => fixture.refreshedIdentity);
+    const registry = createRegistry(fixture, refreshSession);
+
+    await registry.load();
+
+    expect(refreshSession).toHaveBeenCalledTimes(1);
+  });
+
   it("loads the current account's active Host link", async () => {
     const fixture = createFixture();
 
-    await expect(
-      new PairedHostRegistry(fixture.client as never, fixture.store).load(),
-    ).resolves.toEqual({
+    await expect(createRegistry(fixture).load()).resolves.toEqual({
       hostId: "host-1",
       hostName: "开发电脑",
       deviceId: "device-1",
@@ -68,14 +97,10 @@ describe("PairedHostRegistry", () => {
 
   it("returns no pair when the device or link is unavailable", async () => {
     const noDevice = createFixture({ identity: null });
-    await expect(
-      new PairedHostRegistry(noDevice.client as never, noDevice.store).load(),
-    ).resolves.toBeNull();
+    await expect(createRegistry(noDevice).load()).resolves.toBeNull();
 
     const noLink = createFixture({ link: null });
-    await expect(
-      new PairedHostRegistry(noLink.client as never, noLink.store).load(),
-    ).resolves.toBeNull();
+    await expect(createRegistry(noLink).load()).resolves.toBeNull();
 
     const revokedLink = createFixture({
       link: {
@@ -84,18 +109,18 @@ describe("PairedHostRegistry", () => {
         revoked_at: new Date().toISOString(),
       },
     });
-    await expect(
-      new PairedHostRegistry(
-        revokedLink.client as never,
-        revokedLink.store,
-      ).load(),
-    ).resolves.toBeNull();
+    await expect(createRegistry(revokedLink).load()).resolves.toBeNull();
   });
 
   it("rejects an invalid session, revoked Host, or protocol mismatch", async () => {
     const noClaims = createFixture({ claims: {} });
     await expect(
-      new PairedHostRegistry(noClaims.client as never, noClaims.store).load(),
+      createRegistry(
+        noClaims,
+        vi.fn(async () => {
+          throw new Error("登录会话无效，请重新登录");
+        }),
+      ).load(),
     ).rejects.toThrow("登录会话无效");
 
     const revokedHost = createFixture({
@@ -106,12 +131,7 @@ describe("PairedHostRegistry", () => {
         revoked_at: new Date().toISOString(),
       },
     });
-    await expect(
-      new PairedHostRegistry(
-        revokedHost.client as never,
-        revokedHost.store,
-      ).load(),
-    ).resolves.toBeNull();
+    await expect(createRegistry(revokedHost).load()).resolves.toBeNull();
 
     const incompatibleHost = createFixture({
       host: {
@@ -121,11 +141,8 @@ describe("PairedHostRegistry", () => {
         revoked_at: null,
       },
     });
-    await expect(
-      new PairedHostRegistry(
-        incompatibleHost.client as never,
-        incompatibleHost.store,
-      ).load(),
-    ).rejects.toThrow("协议版本不兼容");
+    await expect(createRegistry(incompatibleHost).load()).rejects.toThrow(
+      "协议版本不兼容",
+    );
   });
 });

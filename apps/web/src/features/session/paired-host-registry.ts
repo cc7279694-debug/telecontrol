@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { DeviceIdentityStore } from "../device/device-key-store";
+import { DeviceRegistry } from "../device/device-registry";
+import type {
+  DeviceIdentity,
+  DeviceIdentityStore,
+} from "../device/device-key-store";
 
 interface HostLinkRow {
   host_id: string;
@@ -21,18 +25,26 @@ export interface PairedHostRecord {
   protocolVersion: number;
 }
 
+interface DeviceSessionRefresher {
+  refreshSession(): Promise<DeviceIdentity | null>;
+}
+
 export class PairedHostRegistry {
   constructor(
     private readonly client: SupabaseClient,
     private readonly deviceStore: DeviceIdentityStore,
+    private readonly deviceSessionRefresher: DeviceSessionRefresher = new DeviceRegistry(
+      client,
+      deviceStore,
+    ),
   ) {}
 
   async load(): Promise<PairedHostRecord | null> {
-    const ownerId = await this.getOwnerId();
-    const identity = await this.deviceStore.load(ownerId);
+    const identity = await this.deviceSessionRefresher.refreshSession();
     if (!identity) {
       return null;
     }
+    const ownerId = identity.ownerId;
 
     const linkResponse = await this.client
       .from("host_device_links")
@@ -71,14 +83,5 @@ export class PairedHostRegistry {
       deviceId: identity.deviceId,
       protocolVersion: host.protocol_version,
     };
-  }
-
-  private async getOwnerId(): Promise<string> {
-    const response = await this.client.auth.getClaims();
-    const claims = response.data?.claims as { sub?: unknown } | undefined;
-    if (response.error || typeof claims?.sub !== "string") {
-      throw new Error("登录会话无效，请重新登录");
-    }
-    return claims.sub;
   }
 }

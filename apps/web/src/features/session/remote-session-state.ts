@@ -15,6 +15,7 @@ export const initialRemoteSessionState: RemoteSessionState = {
 export type RemoteSessionAction =
   | { type: "pair.missing" }
   | { type: "pair.found"; host: PairedHostRecord }
+  | { type: "session.retry" }
   | { type: "connection.ready" }
   | { type: "connection.offline"; message: string }
   | { type: "session.error"; message: string };
@@ -28,6 +29,8 @@ export function remoteSessionReducer(
       return { status: "unpaired" };
     case "pair.found":
       return { status: "connecting", host: action.host };
+    case "session.retry":
+      return { status: "loading" };
     case "connection.ready":
       return state.status === "connecting"
         ? { status: "ready", host: state.host }

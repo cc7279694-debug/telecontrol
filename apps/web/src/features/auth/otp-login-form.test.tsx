@@ -10,11 +10,12 @@ import { OtpLoginForm } from "./otp-login-form";
 const signInWithOtp = vi.fn();
 const signInWithPassword = vi.fn();
 const verifyOtp = vi.fn();
+const updateUser = vi.fn();
 const routerPush = vi.fn();
 
 vi.mock("../../lib/supabase/browser", () => ({
   createBrowserSupabaseClient: () => ({
-    auth: { signInWithOtp, signInWithPassword, verifyOtp },
+    auth: { signInWithOtp, signInWithPassword, verifyOtp, updateUser },
   }),
 }));
 
@@ -31,6 +32,7 @@ describe("OtpLoginForm", { timeout: 15_000 }, () => {
     signInWithOtp.mockReset();
     signInWithPassword.mockReset();
     verifyOtp.mockReset();
+    updateUser.mockReset();
     routerPush.mockReset();
   });
 
@@ -93,6 +95,9 @@ describe("OtpLoginForm", { timeout: 15_000 }, () => {
       token: "123456",
       type: "email",
     });
+    await user.click(
+      screen.getByRole("button", { name: "暂不设置，进入控制台" }),
+    );
     expect(routerPush).toHaveBeenCalledWith("/hosts");
   });
 
@@ -112,6 +117,28 @@ describe("OtpLoginForm", { timeout: 15_000 }, () => {
       token: "11449533",
       type: "email",
     });
+    await user.click(
+      screen.getByRole("button", { name: "暂不设置，进入控制台" }),
+    );
+    expect(routerPush).toHaveBeenCalledWith("/hosts");
+  });
+
+  it("can set a password after OTP verification", async () => {
+    signInWithOtp.mockResolvedValue({ error: null });
+    verifyOtp.mockResolvedValue({ error: null });
+    updateUser.mockResolvedValue({ error: null });
+    const user = userEvent.setup();
+    render(<OtpLoginForm />);
+
+    await user.type(screen.getByLabelText("邮箱"), "owner@example.com");
+    await user.click(screen.getByRole("button", { name: "发送验证码" }));
+    await user.type(screen.getByLabelText("验证码"), "123456");
+    await user.click(screen.getByRole("button", { name: "登录" }));
+    await user.type(screen.getByLabelText("新密码"), "correct-password");
+    await user.type(screen.getByLabelText("确认密码"), "correct-password");
+    await user.click(screen.getByRole("button", { name: "保存密码并进入" }));
+
+    expect(updateUser).toHaveBeenCalledWith({ password: "correct-password" });
     expect(routerPush).toHaveBeenCalledWith("/hosts");
   });
 

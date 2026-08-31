@@ -71,6 +71,36 @@ export class DeviceRegistry {
     return identity;
   }
 
+  async refreshSession(): Promise<DeviceIdentity | null> {
+    const { ownerId, sessionId } = await this.getVerifiedSession();
+    const existing = await this.store.load(ownerId);
+    if (!existing) {
+      return null;
+    }
+
+    const response = await this.client
+      .from("devices")
+      .update({
+        auth_session_id: sessionId,
+        last_online_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existing.deviceId)
+      .eq("owner_id", ownerId)
+      .select("id,public_key,revoked_at")
+      .maybeSingle<DeviceRow>();
+
+    if (response.error) {
+      throw new Error("设备会话更新失败，请重新登录");
+    }
+    if (response.data && response.data.revoked_at === null) {
+      return existing;
+    }
+
+    await this.store.clear(ownerId);
+    return null;
+  }
+
   async rebindSession(): Promise<DeviceIdentity> {
     return this.ensureRegistered();
   }

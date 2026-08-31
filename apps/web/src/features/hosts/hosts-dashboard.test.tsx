@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 
+import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HostsDashboard } from "./hosts-dashboard";
 
@@ -104,5 +106,20 @@ describe("HostsDashboard", () => {
       (screen.getByRole("button", { name: "新建任务" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+
+  it("offers reconnect when the realtime connection fails", async () => {
+    const retryConnection = vi.fn();
+    useRemoteSession.mockReturnValue({
+      state: { status: "error", message: "实时连接失败：TIMED_OUT" },
+      retryConnection,
+    });
+
+    const user = userEvent.setup();
+    render(<HostsDashboard />);
+
+    expect(screen.getByText("实时连接失败：TIMED_OUT")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "重新连接" }));
+    expect(retryConnection).toHaveBeenCalledTimes(1);
   });
 });

@@ -18,7 +18,7 @@ import type { RemoteEvent, RemoteThreadSummary } from "@codex-remote/protocol";
 import { enqueueAndWaitForEvent } from "../remote/remote-command-service";
 
 export function HostsDashboard() {
-  const { state: session } = useRemoteSession();
+  const { state: session, retryConnection } = useRemoteSession();
   if (session.status === "unpaired") {
     return (
       <AppShell>
@@ -56,6 +56,9 @@ export function HostsDashboard() {
             >
               重新配对
             </Link>
+            <Button className="ml-3" onClick={retryConnection}>
+              重新连接
+            </Button>
           </CardContent>
         </Card>
       </AppShell>

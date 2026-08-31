@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { render, waitFor } from "@testing-library/react";
+import { render, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { HostSnapshot } from "@codex-remote/protocol";
@@ -30,6 +31,16 @@ const snapshot: HostSnapshot = {
 function Probe() {
   const { state } = useRemoteSession();
   return <output>{state.status}</output>;
+}
+
+function RetryProbe() {
+  const { state, retryConnection } = useRemoteSession();
+  return (
+    <>
+      <output>{state.status}</output>
+      <button onClick={retryConnection}>重新连接</button>
+    </>
+  );
 }
 
 function createClient(snapshotResult = snapshot) {
@@ -94,5 +105,28 @@ describe("RemoteSessionProvider", () => {
     );
 
     await waitFor(() => expect(view.getByText("offline")).toBeTruthy());
+  });
+
+  it("reloads the paired Host after a connection error", async () => {
+    const client = createClient();
+    const dependencies = {
+      loadPair: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("实时连接失败：TIMED_OUT"))
+        .mockResolvedValueOnce(host),
+      createClient: vi.fn(() => client),
+    } satisfies RemoteSessionDependencies;
+    const user = userEvent.setup();
+    const view = render(
+      <RemoteSessionProvider dependencies={dependencies}>
+        <RetryProbe />
+      </RemoteSessionProvider>,
+    );
+    const scoped = within(view.container);
+
+    await waitFor(() => expect(scoped.getByText("error")).toBeTruthy());
+    await user.click(scoped.getByRole("button", { name: "重新连接" }));
+    await waitFor(() => expect(scoped.getByText("ready")).toBeTruthy());
+    expect(dependencies.loadPair).toHaveBeenCalledTimes(2);
   });
 });

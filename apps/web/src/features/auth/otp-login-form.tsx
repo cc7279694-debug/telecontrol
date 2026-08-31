@@ -7,6 +7,7 @@ import { createBrowserSupabaseClient } from "../../lib/supabase/browser";
 
 type AuthError = { message?: string } | null;
 type LoginMode = "otp" | "password";
+type OtpStep = "email" | "token" | "set-password";
 
 function translateAuthError(error: AuthError): string {
   const message = error?.message?.toLowerCase() ?? "";
@@ -24,9 +25,10 @@ export function OtpLoginForm(): React.JSX.Element {
   const supabase = createBrowserSupabaseClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [token, setToken] = useState("");
   const [mode, setMode] = useState<LoginMode>("otp");
-  const [step, setStep] = useState<"email" | "token">("email");
+  const [step, setStep] = useState<OtpStep>("email");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -100,6 +102,33 @@ export function OtpLoginForm(): React.JSX.Element {
     setBusy(false);
     if (verifyError) {
       setError(translateAuthError(verifyError));
+      return;
+    }
+    setPassword("");
+    setConfirmPassword("");
+    setStep("set-password");
+  }
+
+  async function setLoginPassword(
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> {
+    event.preventDefault();
+    if (password.length < 8) {
+      setError("密码至少需要8位");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("两次输入的密码不一致");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    const { error: updateError } = await supabase.auth.updateUser({
+      password,
+    });
+    setBusy(false);
+    if (updateError) {
+      setError("密码设置失败，请稍后重试");
       return;
     }
     router.push("/hosts");
@@ -198,7 +227,7 @@ export function OtpLoginForm(): React.JSX.Element {
             使用密码登录
           </button>
         </form>
-      ) : (
+      ) : step === "token" ? (
         <form className="space-y-5" noValidate onSubmit={verifyCode}>
           <div className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
             验证码已发送至{" "}
@@ -215,7 +244,7 @@ export function OtpLoginForm(): React.JSX.Element {
               onChange={(event) =>
                 setToken(event.target.value.replace(/\D/g, ""))
               }
-              pattern="[0-9]{6}"
+              pattern="[0-9]{6,10}"
               placeholder="000000"
               type="text"
               value={token}
@@ -238,6 +267,50 @@ export function OtpLoginForm(): React.JSX.Element {
             type="button"
           >
             更换邮箱
+          </button>
+        </form>
+      ) : (
+        <form className="space-y-5" noValidate onSubmit={setLoginPassword}>
+          <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">
+            邮箱验证成功。设置登录密码后，下次可以直接使用邮箱和密码登录。
+          </div>
+          <label className="block space-y-2 text-sm font-medium text-slate-800">
+            <span>新密码</span>
+            <input
+              aria-describedby={error ? "auth-error" : undefined}
+              autoComplete="new-password"
+              className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="至少8位"
+              type="password"
+              value={password}
+            />
+          </label>
+          <label className="block space-y-2 text-sm font-medium text-slate-800">
+            <span>确认密码</span>
+            <input
+              aria-describedby={error ? "auth-error" : undefined}
+              autoComplete="new-password"
+              className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              placeholder="再次输入密码"
+              type="password"
+              value={confirmPassword}
+            />
+          </label>
+          <button
+            className="h-12 w-full rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-900/20 disabled:cursor-not-allowed disabled:bg-slate-400"
+            disabled={busy}
+            type="submit"
+          >
+            {busy ? "保存中…" : "保存密码并进入"}
+          </button>
+          <button
+            className="h-11 w-full rounded-xl border border-slate-300 px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-900/10"
+            onClick={() => router.push("/hosts")}
+            type="button"
+          >
+            暂不设置，进入控制台
           </button>
         </form>
       )}

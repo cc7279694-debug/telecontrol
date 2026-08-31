@@ -121,4 +121,33 @@ describe("DeviceRegistry", () => {
       expect.objectContaining({ auth_session_id: "session-1" }),
     ]);
   });
+
+  it("refreshes an existing device session without creating a device", async () => {
+    const keyPair = await generateP256KeyPair();
+    const { client, state } = createClient({
+      existing: {
+        id: "device-1",
+        public_key: JSON.stringify(keyPair.publicKey),
+        revoked_at: null,
+      },
+    });
+    const { store } = createStore(keyPair);
+    await store.save({
+      ownerId: "owner-1",
+      deviceId: "device-1",
+      privateKey: keyPair.privateKey,
+      publicKey: keyPair.publicKey,
+    });
+    const registry = new DeviceRegistry(client as never, store);
+
+    await expect(registry.refreshSession()).resolves.toMatchObject({
+      ownerId: "owner-1",
+      deviceId: "device-1",
+    });
+
+    expect(state.updated).toEqual([
+      expect.objectContaining({ auth_session_id: "session-1" }),
+    ]);
+    expect(client.from).toHaveBeenCalledWith("devices");
+  });
 });

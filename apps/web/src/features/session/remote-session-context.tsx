@@ -27,6 +27,7 @@ import {
 
 interface RemoteSessionContextValue {
   state: RemoteSessionState;
+  retryConnection: () => void;
 }
 
 export interface RemoteSessionDependencies {
@@ -64,6 +65,7 @@ export function RemoteSessionProvider({
     remoteSessionReducer,
     initialRemoteSessionState,
   );
+  const [retryNonce, setRetryNonce] = React.useState(0);
 
   useEffect(() => {
     let disposed = false;
@@ -88,7 +90,12 @@ export function RemoteSessionProvider({
     return () => {
       disposed = true;
     };
-  }, [resolvedDependencies]);
+  }, [resolvedDependencies, retryNonce]);
+
+  const retryConnection = useCallback(() => {
+    dispatch({ type: "session.retry" });
+    setRetryNonce((value) => value + 1);
+  }, []);
 
   const host = "host" in state ? state.host : null;
   const client = useMemo(
@@ -115,7 +122,7 @@ export function RemoteSessionProvider({
   );
 
   return (
-    <RemoteSessionContext.Provider value={{ state }}>
+    <RemoteSessionContext.Provider value={{ state, retryConnection }}>
       {host && client ? (
         <RemoteProvider
           client={client}
