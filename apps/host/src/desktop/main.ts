@@ -345,6 +345,10 @@ if (process.argv.includes("--package-smoke")) {
       },
       chooseWorkspace: async () => {
         if (!workspaceAuthorizer) return unavailableActionResult;
+        if (!desktopState.host) {
+          const registration = await registerCurrentHost();
+          if (!registration.ok) return registration;
+        }
         const selected = await dialog.showOpenDialog({
           properties: ["openDirectory"],
         });
