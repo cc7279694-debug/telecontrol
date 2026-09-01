@@ -51,6 +51,9 @@ export class PairedHostRegistry {
       .select("host_id,device_id,revoked_at")
       .eq("owner_id", ownerId)
       .eq("device_id", identity.deviceId)
+      .is("revoked_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle<HostLinkRow>();
     if (linkResponse.error) {
       throw new Error("配对电脑读取失败，请稍后重试");

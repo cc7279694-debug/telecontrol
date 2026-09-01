@@ -12,6 +12,9 @@ function createQuery<T>(
   const query = {
     select: vi.fn(() => query),
     eq: vi.fn(() => query),
+    is: vi.fn(() => query),
+    order: vi.fn(() => query),
+    limit: vi.fn(() => query),
     maybeSingle: vi.fn(async () => ({ data, error })),
   };
   return query;
@@ -93,6 +96,29 @@ describe("PairedHostRegistry", () => {
     });
     expect(fixture.client.from).toHaveBeenNthCalledWith(1, "host_device_links");
     expect(fixture.client.from).toHaveBeenNthCalledWith(2, "hosts");
+  });
+
+  it("limits the device lookup to the newest active link", async () => {
+    const fixture = createFixture({
+      link: { host_id: "host-new", device_id: "device-1", revoked_at: null },
+      host: {
+        id: "host-new",
+        name: "最新开发电脑",
+        protocol_version: 1,
+        revoked_at: null,
+      },
+    });
+
+    await expect(createRegistry(fixture).load()).resolves.toMatchObject({
+      hostId: "host-new",
+      hostName: "最新开发电脑",
+    });
+
+    expect(fixture.linkQuery.is).toHaveBeenCalledWith("revoked_at", null);
+    expect(fixture.linkQuery.order).toHaveBeenCalledWith("created_at", {
+      ascending: false,
+    });
+    expect(fixture.linkQuery.limit).toHaveBeenCalledWith(1);
   });
 
   it("returns no pair when the device or link is unavailable", async () => {
