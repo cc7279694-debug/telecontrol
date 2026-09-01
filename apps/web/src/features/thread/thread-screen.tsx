@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "../../components/app-shell";
 import { Badge } from "../../components/ui/badge";
@@ -11,6 +11,11 @@ import { useRemote } from "../remote/remote-client-context";
 import { useRemoteSession } from "../session/remote-session-context";
 import { ApprovalCard } from "./approval-card";
 import { ThreadComposer } from "./thread-composer";
+import { isThreadComposerDisabled } from "./thread-control-state";
+import {
+  isNearThreadScrollBottom,
+  scrollThreadToLatest,
+} from "./thread-scroll";
 import { ThreadTimeline } from "./thread-timeline";
 import { useThreadController } from "./use-thread-controller";
 import { StopTurnDialog } from "./stop-turn-dialog";
@@ -108,6 +113,27 @@ function ConnectedThreadScreen({
   const controller = useThreadController({ hostId, threadId, workspaceId });
   const [stopOpen, setStopOpen] = useState(false);
   const snapshot = controller.snapshot;
+  const threadScrollRef = useRef<HTMLDivElement>(null);
+  const followLatestRef = useRef(true);
+  const previousThreadIdRef = useRef(threadId);
+
+  useEffect(() => {
+    if (previousThreadIdRef.current === threadId) return;
+
+    previousThreadIdRef.current = threadId;
+    followLatestRef.current = true;
+  }, [threadId]);
+
+  useEffect(() => {
+    if (!followLatestRef.current || !threadScrollRef.current) return;
+
+    scrollThreadToLatest(threadScrollRef.current);
+  }, [
+    controller.approvals.length,
+    controller.streamText,
+    snapshot?.items.length,
+    threadId,
+  ]);
 
   if (!snapshot) {
     return (
@@ -184,13 +210,13 @@ function ConnectedThreadScreen({
           <Card className="mb-5">
             <CardContent className="flex flex-col items-start justify-between gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
               <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-                这是历史任务，恢复后可以继续操作。
+                这是历史任务，可以直接输入；发送时会自动恢复。
               </p>
               <Button
                 disabled={!remoteState.online || controller.pending}
                 onClick={() => void controller.resume()}
               >
-                {controller.pending ? "正在恢复…" : "恢复并继续"}
+                {controller.pending ? "正在恢复…" : "立即恢复"}
               </Button>
             </CardContent>
           </Card>
@@ -203,7 +229,18 @@ function ConnectedThreadScreen({
             {controller.error}
           </p>
         ) : null}
-        <ScrollArea className="flex-1 px-1 pb-4 sm:px-2">
+        <ScrollArea
+          ref={threadScrollRef}
+          className="flex-1 px-1 pb-4 sm:px-2"
+          onScroll={(event) => {
+            const element = event.currentTarget;
+            followLatestRef.current = isNearThreadScrollBottom({
+              clientHeight: element.clientHeight,
+              scrollHeight: element.scrollHeight,
+              scrollTop: element.scrollTop,
+            });
+          }}
+        >
           <ThreadTimeline
             items={snapshot.items}
             streamText={controller.streamText}
@@ -231,7 +268,12 @@ function ConnectedThreadScreen({
           ) : null}
         </div>
         <ThreadComposer
-          disabled={!canControl || snapshot.readOnly}
+          disabled={isThreadComposerDisabled({
+            online: remoteState.online,
+            pending: controller.pending,
+            readOnly: snapshot.readOnly,
+            state: snapshot.state,
+          })}
           pending={controller.pending}
           onSend={controller.send}
         />

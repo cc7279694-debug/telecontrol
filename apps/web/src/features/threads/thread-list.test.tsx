@@ -76,4 +76,25 @@ describe("ThreadList", () => {
 
     expect(screen.getByRole("button", { name: "加载更多" })).toBeTruthy();
   });
+
+  it("does not label an idle historical task as currently read-only", () => {
+    render(
+      <ThreadList
+        {...baseProps}
+        threads={[
+          {
+            id: "thread-1",
+            workspaceId: "workspace-1",
+            title: "历史任务",
+            updatedAt: "2026-08-26T01:00:00.000Z",
+            state: "idle",
+            readOnly: true,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("历史任务")).toBeTruthy();
+    expect(screen.queryByText("电脑端正在运行 / 只读")).toBeNull();
+  });
 });

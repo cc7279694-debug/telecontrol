@@ -67,7 +67,7 @@ export function ThreadList({
               </span>
               <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
                 <span>{formatThreadState(thread)}</span>
-                {thread.readOnly ? (
+                {thread.readOnly && thread.state === "running" ? (
                   <Badge tone="warning">电脑端正在运行 / 只读</Badge>
                 ) : null}
               </span>
