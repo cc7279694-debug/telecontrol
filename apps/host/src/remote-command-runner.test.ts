@@ -174,6 +174,25 @@ describe("RemoteCommandRunner", () => {
     });
   });
 
+  it("heals an unknown Host thread when a direct read confirms it is idle", async () => {
+    const result = await createRunner(
+      {
+        type: "thread.read",
+        workspaceId: "workspace-1",
+        threadId: "thread-1",
+      },
+      (store) => store.markHostOwned("thread-1", "workspace-1", "unknown"),
+    );
+
+    await result.runner.runOnce();
+
+    expect(result.store.get("thread-1")).toMatchObject({
+      owner: "host",
+      state: "idle",
+    });
+    expect(result.store.canWrite("thread-1")).toBe(true);
+  });
+
   it("dispatches turn.start only for a Host-owned thread and completes it", async () => {
     const { runner, transport, adapter } = await createRunner(
       {
@@ -470,6 +489,26 @@ describe("RemoteCommandRunner", () => {
     });
     await vi.waitFor(() => expect(notificationSink.notify).toHaveBeenCalled());
     expect(transport.sentEvents).toHaveLength(2);
+  });
+
+  it("keeps polling after a transient command-claim failure", async () => {
+    const result = await createRunner({
+      type: "thread.list",
+      workspaceId: "workspace-1",
+    });
+    vi.spyOn(result.transport, "claimNextCommand")
+      .mockRejectedValueOnce(new Error("temporary transport failure"))
+      .mockResolvedValueOnce(result.transport.claimed)
+      .mockResolvedValue(null);
+
+    try {
+      result.runner.start();
+      await vi.waitFor(() => {
+        expect(result.adapter.listThreads).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      result.runner.stop();
+    }
   });
 
   it("publishes an authoritative encrypted snapshot for a linked device", async () => {

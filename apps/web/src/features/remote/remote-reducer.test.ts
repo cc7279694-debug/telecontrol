@@ -6,6 +6,89 @@ import {
 } from "./remote-reducer";
 
 describe("remoteReducer", () => {
+  it("moves a thread into the active turn state when Codex starts responding", () => {
+    const state = remoteReducer(
+      {
+        ...initialRemoteState,
+        threadSnapshots: {
+          "thread-1": {
+            id: "thread-1",
+            workspaceId: "workspace-1",
+            title: "修复登录问题",
+            state: "idle",
+            readOnly: false,
+            items: [],
+          },
+        },
+      },
+      {
+        type: "turn.status",
+        event: {
+          type: "turn.status",
+          requestMessageId: "00000000-0000-4000-8000-000000000006",
+          threadId: "thread-1",
+          turnId: "turn-1",
+          status: "inProgress",
+        },
+      },
+    );
+
+    expect(state.threadSnapshots["thread-1"]).toMatchObject({
+      state: "running",
+      activeTurnId: "turn-1",
+    });
+  });
+
+  it("keeps streamed output in the timeline after a turn completes", () => {
+    const initial = {
+      ...initialRemoteState,
+      threadSnapshots: {
+        "thread-1": {
+          id: "thread-1",
+          workspaceId: "workspace-1",
+          title: "修复登录问题",
+          state: "running" as const,
+          readOnly: false,
+          activeTurnId: "turn-1",
+          items: [],
+        },
+      },
+    };
+    const streamed = remoteReducer(initial, {
+      type: "stream.delta",
+      event: {
+        type: "stream.delta",
+        requestMessageId: "00000000-0000-4000-8000-000000000007",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        sequence: 0,
+        delta: "已完成检查",
+      },
+    });
+    const completed = remoteReducer(streamed, {
+      type: "turn.status",
+      event: {
+        type: "turn.status",
+        requestMessageId: "00000000-0000-4000-8000-000000000008",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        status: "completed",
+      },
+    });
+
+    expect(completed.threadSnapshots["thread-1"]).toMatchObject({
+      state: "idle",
+    });
+    expect(completed.threadSnapshots["thread-1"]?.activeTurnId).toBeUndefined();
+    expect(completed.threadSnapshots["thread-1"]?.items).toContainEqual({
+      id: "remote-stream:turn-1",
+      role: "assistant",
+      kind: "text",
+      text: "已完成检查",
+      status: "completed",
+    });
+  });
+
   it("marks a sequence gap for authoritative snapshot recovery", () => {
     const first: RemoteAction = {
       type: "stream.delta",

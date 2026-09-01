@@ -9,7 +9,7 @@ import {
   RemoteSessionProvider,
   type RemoteSessionDependencies,
 } from "../session/remote-session-context";
-import { ThreadScreen } from "./thread-screen";
+import { THREAD_SCREEN_LAYOUT_CLASS, ThreadScreen } from "./thread-screen";
 
 function createDependencies(): RemoteSessionDependencies {
   return {
@@ -19,6 +19,12 @@ function createDependencies(): RemoteSessionDependencies {
 }
 
 describe("ThreadScreen", () => {
+  it("keeps the timeline in a bounded viewport so the latest message can be shown", () => {
+    expect(THREAD_SCREEN_LAYOUT_CLASS).toContain("h-[calc(100dvh-8rem)]");
+    expect(THREAD_SCREEN_LAYOUT_CLASS).toContain("min-h-0");
+    expect(THREAD_SCREEN_LAYOUT_CLASS).toContain("overflow-hidden");
+  });
+
   it("waits for the session provider before reading remote thread state", async () => {
     const view = render(
       <RemoteSessionProvider dependencies={createDependencies()}>

@@ -2,8 +2,12 @@ import type {
   HostSnapshot,
   RemoteEvent,
   RemoteThreadSnapshot,
+  RemoteTimelineItem,
   RemoteThreadSummary,
 } from "@codex-remote/protocol";
+
+const STREAM_ITEM_PREFIX = "remote-stream:";
+const TERMINAL_TURN_STATUSES = new Set(["completed", "failed", "interrupted"]);
 
 export interface RemoteState {
   hostSnapshot: HostSnapshot | null;
@@ -127,15 +131,52 @@ export function remoteReducer(
       if (previous && action.event.sequence <= previous.sequence) {
         return state;
       }
+      const text = `${previous?.text ?? ""}${action.event.delta}`;
+      const knownStatus = state.turnStatuses[key];
+      const streamItem = {
+        id: `${STREAM_ITEM_PREFIX}${action.event.turnId}`,
+        role: "assistant" as const,
+        kind: "text" as const,
+        text,
+        status: timelineStatus(knownStatus),
+      } satisfies RemoteTimelineItem;
+      const currentSnapshot = state.threadSnapshots[action.event.threadId];
+      const existingStreamItem = currentSnapshot?.items.some(
+        (item) => item.id === streamItem.id,
+      );
+      const nextSnapshot = currentSnapshot
+        ? {
+            ...currentSnapshot,
+            ...(TERMINAL_TURN_STATUSES.has(knownStatus)
+              ? {}
+              : {
+                  state: "running" as const,
+                  activeTurnId: action.event.turnId,
+                }),
+            items: existingStreamItem
+              ? currentSnapshot.items.map((item) =>
+                  item.id === streamItem.id ? streamItem : item,
+                )
+              : [...currentSnapshot.items, streamItem],
+          }
+        : undefined;
       return {
         ...state,
         streams: {
           ...state.streams,
           [key]: {
             sequence: action.event.sequence,
-            text: `${previous?.text ?? ""}${action.event.delta}`,
+            text,
           },
         },
+        ...(nextSnapshot
+          ? {
+              threadSnapshots: {
+                ...state.threadSnapshots,
+                [action.event.threadId]: nextSnapshot,
+              },
+            }
+          : {}),
       };
     }
     case "turn.status": {
@@ -152,6 +193,10 @@ export function remoteReducer(
               ),
             )
           : state.pendingApprovals;
+      const currentSnapshot = state.threadSnapshots[action.event.threadId];
+      const nextSnapshot = currentSnapshot
+        ? updateSnapshotForTurnStatus(currentSnapshot, action.event)
+        : undefined;
       return {
         ...state,
         lastTurnStatus: action.event.status,
@@ -160,6 +205,14 @@ export function remoteReducer(
           [turnKey]: action.event.status,
         },
         pendingApprovals,
+        ...(nextSnapshot
+          ? {
+              threadSnapshots: {
+                ...state.threadSnapshots,
+                [action.event.threadId]: nextSnapshot,
+              },
+            }
+          : {}),
       };
     }
     case "approval.request":
@@ -181,4 +234,48 @@ export function remoteReducer(
     case "error":
       return { ...state, error: action.event.message };
   }
+}
+
+function updateSnapshotForTurnStatus(
+  snapshot: RemoteThreadSnapshot,
+  event: Extract<RemoteEvent, { type: "turn.status" }>,
+): RemoteThreadSnapshot {
+  const streamItemId = `${STREAM_ITEM_PREFIX}${event.turnId}`;
+  const items = snapshot.items.map((item) =>
+    item.id === streamItemId
+      ? { ...item, status: timelineStatus(event.status) }
+      : item,
+  );
+
+  if (event.status === "queued" || event.status === "inProgress") {
+    return {
+      ...snapshot,
+      state: "running",
+      activeTurnId: event.turnId,
+      items,
+    };
+  }
+
+  const nextSnapshot = {
+    ...snapshot,
+    state: "idle" as const,
+    items,
+  };
+  if (nextSnapshot.activeTurnId === event.turnId) {
+    delete nextSnapshot.activeTurnId;
+  }
+  return nextSnapshot;
+}
+
+function timelineStatus(
+  status: string | undefined,
+): NonNullable<RemoteTimelineItem["status"]> {
+  if (
+    status === "completed" ||
+    status === "failed" ||
+    status === "interrupted"
+  ) {
+    return status;
+  }
+  return "inProgress";
 }

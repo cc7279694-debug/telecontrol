@@ -20,6 +20,9 @@ import { ThreadTimeline } from "./thread-timeline";
 import { useThreadController } from "./use-thread-controller";
 import { StopTurnDialog } from "./stop-turn-dialog";
 
+export const THREAD_SCREEN_LAYOUT_CLASS =
+  "flex h-[calc(100dvh-8rem)] min-h-0 flex-col overflow-hidden";
+
 export function ThreadScreen({
   hostId,
   threadId,
@@ -161,7 +164,7 @@ function ConnectedThreadScreen({
 
   return (
     <AppShell action={false}>
-      <div className="flex min-h-[calc(100dvh-8rem)] flex-col">
+      <div className={THREAD_SCREEN_LAYOUT_CLASS}>
         <header className="mb-5 flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white/80 p-2 shadow-sm dark:border-white/10 dark:bg-zinc-900/80">
           <Link
             className="inline-flex min-h-11 shrink-0 items-center rounded-xl px-3 text-sm font-semibold text-zinc-600 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-zinc-300 dark:hover:bg-zinc-800"

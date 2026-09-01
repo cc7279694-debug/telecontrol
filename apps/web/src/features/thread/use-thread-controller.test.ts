@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, renderHook } from "@testing-library/react";
+import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RemoteThreadSnapshot } from "@codex-remote/protocol";
 import type { RemoteClient } from "../remote/remote-client";
@@ -30,12 +30,12 @@ const idleSnapshot: RemoteThreadSnapshot = {
   items: [],
 };
 
-function createRemote(snapshot = idleSnapshot) {
+function createRemote(snapshot: RemoteThreadSnapshot | null = idleSnapshot) {
   return {
     state: {
       online: true,
       threadSummaries: [],
-      threadSnapshots: { [snapshot.id]: snapshot },
+      threadSnapshots: snapshot ? { [snapshot.id]: snapshot } : {},
       streams: {},
       turnStatuses: {},
       pendingApprovals: {},
@@ -52,6 +52,43 @@ function createRemote(snapshot = idleSnapshot) {
 }
 
 describe("useThreadController", () => {
+  it("reads a thread even when its summary was loaded first", async () => {
+    const remote = createRemote(null);
+    const remoteWithSummary = {
+      ...remote,
+      state: {
+        ...remote.state,
+        threadSummaries: [{ id: "thread-1" }],
+      },
+    };
+    useRemote.mockReturnValue(remoteWithSummary);
+    enqueueAndWaitForEvent.mockResolvedValue({
+      type: "thread.snapshot",
+      requestMessageId: "read-1",
+      snapshot: idleSnapshot,
+    });
+
+    renderHook(() =>
+      useThreadController({
+        hostId: "host-1",
+        threadId: "thread-1",
+        workspaceId: "workspace-1",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(enqueueAndWaitForEvent).toHaveBeenCalledWith(
+        remote.client,
+        {
+          type: "thread.read",
+          workspaceId: "workspace-1",
+          threadId: "thread-1",
+        },
+        expect.any(Function),
+      );
+    });
+  });
+
   it("starts a new turn when the task is idle", async () => {
     const remote = createRemote();
     useRemote.mockReturnValue(remote);

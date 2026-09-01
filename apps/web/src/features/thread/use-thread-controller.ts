@@ -39,11 +39,7 @@ export function useThreadController(
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (
-      !state.online ||
-      snapshot ||
-      state.threadSummaries.some((thread) => thread.id === input.threadId)
-    ) {
+    if (!state.online || snapshot) {
       return;
     }
     void readThread();
@@ -212,9 +208,15 @@ export function useThreadController(
   }
 
   const activeTurnId = snapshot?.activeTurnId;
-  const streamText = activeTurnId
-    ? (state.streams[`${input.threadId}:${activeTurnId}`]?.text ?? "")
-    : "";
+  const hasStreamTimelineItem = activeTurnId
+    ? snapshot?.items.some(
+        (item) => item.id === `remote-stream:${activeTurnId}`,
+      )
+    : false;
+  const streamText =
+    activeTurnId && !hasStreamTimelineItem
+      ? (state.streams[`${input.threadId}:${activeTurnId}`]?.text ?? "")
+      : "";
   const approvals = Object.values(state.pendingApprovals).filter(
     (approval) =>
       approval.threadId === input.threadId &&

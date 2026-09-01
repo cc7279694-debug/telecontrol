@@ -439,7 +439,16 @@ export class RemoteCommandRunner {
       workspaceId: command.workspaceId,
       readOnly: known ? known.owner !== "host" : true,
     });
-    if (known?.owner === "external" && snapshot.state === "running") {
+    if (known?.owner === "host" && snapshot.state === "running") {
+      this.options.threadStore.markHostOwned(
+        command.threadId,
+        command.workspaceId,
+        "running",
+        snapshot.activeTurnId,
+      );
+    } else if (known?.owner === "host" && snapshot.state === "idle") {
+      this.options.threadStore.updateState(command.threadId, "idle");
+    } else if (known?.owner === "external" && snapshot.state === "running") {
       this.options.threadStore.markExternalRunning(
         command.threadId,
         command.workspaceId,
@@ -618,7 +627,12 @@ export class RemoteCommandRunner {
 
   private async loop(): Promise<void> {
     while (this.running) {
-      await this.runOnce();
+      try {
+        await this.runOnce();
+      } catch {
+        // A transient Supabase or network error must not permanently stop the
+        // Host command loop. The next poll retries the claim safely.
+      }
       if (this.running) {
         await delay(this.options.pollIntervalMs ?? 250);
       }
