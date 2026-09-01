@@ -279,6 +279,12 @@ export function createE2eFixture(input: {
       publish(stateForScenario("ready"));
       return success("登录成功");
     },
+    signInWithPassword: async () => {
+      record("signInWithPassword");
+      currentScenario = "ready";
+      publish(stateForScenario("ready"));
+      return success("登录成功");
+    },
     signOut: async () => {
       record("signOut");
       currentScenario = "signed-out";

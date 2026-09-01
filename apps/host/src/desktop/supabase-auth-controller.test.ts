@@ -29,6 +29,10 @@ function createFixture() {
       data: { user: null, session: null },
       error: null,
     })),
+    signInWithPassword: vi.fn(async () => ({
+      data: { user, session },
+      error: null,
+    })),
     verifyOtp: vi.fn(async () => {
       storedSession = session;
       return { data: { user, session }, error: null };
@@ -130,6 +134,23 @@ describe("supabase auth controller", () => {
       ownerId: "user-1",
       authSessionId: "session-1",
     });
+  });
+
+  it("signs in with an email password and stores the session", async () => {
+    const fixture = createFixture();
+
+    await expect(
+      fixture.controller.signInWithPassword(
+        "demo@example.com",
+        "correct-horse-battery-staple",
+      ),
+    ).resolves.toEqual({ ok: true, message: "登录成功" });
+
+    expect(fixture.auth.signInWithPassword).toHaveBeenCalledWith({
+      email: "demo@example.com",
+      password: "correct-horse-battery-staple",
+    });
+    expect(fixture.credentialStore.write).toHaveBeenCalled();
   });
 
   it("rejects replacing credentials with a different account", async () => {

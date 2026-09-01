@@ -8,6 +8,7 @@ import {
   desktopChannels,
   removeWorkspaceInputSchema,
   requestOtpInputSchema,
+  signInWithPasswordInputSchema,
   setOpenAtLoginInputSchema,
   stopHostInputSchema,
   verifyOtpInputSchema,
@@ -37,6 +38,12 @@ const desktopApi: DesktopApi = Object.freeze({
       desktopChannels.verifyOtp,
       ActionResultSchema,
       verifyOtpInputSchema.parse(input),
+    ),
+  signInWithPassword: (input) =>
+    invokeAndParse(
+      desktopChannels.signInWithPassword,
+      ActionResultSchema,
+      signInWithPasswordInputSchema.parse(input),
     ),
   signOut: () => invokeAndParse(desktopChannels.signOut, ActionResultSchema),
   chooseWorkspace: () =>

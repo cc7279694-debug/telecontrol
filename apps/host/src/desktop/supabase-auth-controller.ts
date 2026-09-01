@@ -10,6 +10,10 @@ type SupabaseAuthLike = {
     email: string;
     options: { shouldCreateUser: boolean };
   }) => Promise<AuthResponse<{ user: User | null; session: Session | null }>>;
+  signInWithPassword: (input: {
+    email: string;
+    password: string;
+  }) => Promise<AuthResponse<{ user: User | null; session: Session | null }>>;
   verifyOtp: (input: {
     email: string;
     token: string;
@@ -79,6 +83,23 @@ function authMessage(error: AuthErrorLike, fallback: string) {
     return "验证码无效或已过期";
   }
   return fallback;
+}
+
+function passwordMessage(error: AuthErrorLike) {
+  const message = error?.message?.toLowerCase() ?? "";
+  if (message.includes("email not confirmed")) {
+    return "邮箱尚未验证，请先验证邮箱";
+  }
+  if (
+    message.includes("invalid login credentials") ||
+    message.includes("invalid password")
+  ) {
+    return "邮箱或密码不正确";
+  }
+  if (message.includes("rate limit")) {
+    return "登录请求过于频繁，请稍后重试";
+  }
+  return "密码登录失败，请稍后重试";
 }
 
 function parseSession(value: string) {
@@ -315,6 +336,26 @@ export function createSupabaseAuthController({
     return { ok: true, message: "登录成功" };
   }
 
+  async function signInWithPassword(
+    email: string,
+    password: string,
+  ): Promise<AuthActionResult> {
+    const result = await client.auth.signInWithPassword({ email, password });
+    if (result.error) {
+      return { ok: false, message: passwordMessage(result.error) };
+    }
+    if (!result.data.session) {
+      return { ok: false, message: "登录失败，未获取到登录状态" };
+    }
+    if (!(await persistSession(result.data.session))) {
+      return {
+        ok: false,
+        message: "检测到其他账号的本机凭据，请先清除本机数据后重试",
+      };
+    }
+    return { ok: true, message: "登录成功" };
+  }
+
   async function restore(): Promise<AuthActionResult> {
     const credentials = await credentialStore.read();
     if (credentials && client.auth.setSession) {
@@ -397,6 +438,7 @@ export function createSupabaseAuthController({
   return {
     requestOtp,
     verifyOtp,
+    signInWithPassword,
     restore,
     refresh,
     signOut,

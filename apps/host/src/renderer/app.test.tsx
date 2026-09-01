@@ -129,6 +129,36 @@ describe("Host renderer", () => {
     });
   });
 
+  it("supports signing in with an email password", async () => {
+    const api = {
+      getDesktopState: vi.fn(async () => stoppedState),
+      subscribeDesktopState: vi.fn(() => vi.fn()),
+      signInWithPassword: vi.fn(async () => ({
+        ok: true,
+        message: "登录成功",
+      })),
+    } as unknown as DesktopApi;
+    Object.defineProperty(window, "codexRemoteHost", {
+      configurable: true,
+      value: api,
+    });
+
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "密码登录" }));
+    await user.type(await screen.findByLabelText("邮箱"), "user@example.com");
+    await user.type(
+      screen.getByLabelText("密码"),
+      "correct-horse-battery-staple",
+    );
+    await user.click(screen.getByRole("button", { name: "使用密码登录" }));
+
+    expect(api.signInWithPassword).toHaveBeenCalledWith({
+      email: "user@example.com",
+      password: "correct-horse-battery-staple",
+    });
+  });
+
   it("shows authorized projects and the pairing code controls for a signed-in Host", async () => {
     const signedInState: DesktopState = {
       ...stoppedState,

@@ -22,6 +22,8 @@ const hostStatusLabels: Record<DesktopState["hostStatus"], string> = {
 const unsafeDesktopMessagePattern =
   /(?:\b(?:Error|TypeError|ReferenceError|SyntaxError)\b|[A-Za-z]:[\\/]|\\\\|\/(?:Users|home|private|tmp|var)\/|\b(?:access|refresh)[_-]?token\b|\bservice[_ -]?role\b|-----BEGIN [^-]+ PRIVATE KEY-----|[\w.+-]+@[\w.-]+\.\w+|(?:验证码|otp|code)\s*[:=]?\s*\d{4,})/i;
 
+type LoginMode = "otp" | "password";
+
 export function sanitizeDesktopMessage(message: string, fallback: string) {
   const trimmed = message.trim();
   return trimmed.length > 0 && !unsafeDesktopMessagePattern.test(trimmed)
@@ -34,8 +36,10 @@ export function App() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [email, setEmail] = useState("");
   const [token, setToken] = useState("");
+  const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [otpSent, setOtpSent] = useState(false);
+  const [loginMode, setLoginMode] = useState<LoginMode>("otp");
   const [busy, setBusy] = useState(false);
   const [resetPhrase, setResetPhrase] = useState<string | null>(null);
   const [resetInput, setResetInput] = useState("");
@@ -102,6 +106,34 @@ export function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleSignInWithPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await window.codexRemoteHost.signInWithPassword({
+        email,
+        password,
+      });
+      setMessage(
+        sanitizeDesktopMessage(result.message, "密码登录失败，请稍后重试"),
+      );
+    } catch {
+      setMessage("密码登录失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function switchLoginMode(mode: LoginMode) {
+    if (busy || mode === loginMode) return;
+    setLoginMode(mode);
+    setOtpSent(false);
+    setToken("");
+    setPassword("");
+    setMessage(null);
   }
 
   async function handleSignOut() {
@@ -298,41 +330,99 @@ export function App() {
               <div className="auth-card">
                 <h1>登录 Windows Host</h1>
                 <p className="detail">登录后，手机才能找到这台电脑。</p>
-                <form onSubmit={otpSent ? handleVerifyOtp : handleRequestOtp}>
-                  <label>
-                    邮箱
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
-                      placeholder="name@example.com"
-                      disabled={busy}
-                      required
-                    />
-                  </label>
-                  {otpSent ? (
+                <div className="auth-mode-switch" aria-label="登录方式">
+                  <button
+                    type="button"
+                    className={loginMode === "otp" ? "active" : ""}
+                    aria-pressed={loginMode === "otp"}
+                    onClick={() => switchLoginMode("otp")}
+                    disabled={busy}
+                  >
+                    验证码登录
+                  </button>
+                  <button
+                    type="button"
+                    className={loginMode === "password" ? "active" : ""}
+                    aria-pressed={loginMode === "password"}
+                    onClick={() => switchLoginMode("password")}
+                    disabled={busy}
+                  >
+                    密码登录
+                  </button>
+                </div>
+                {loginMode === "password" ? (
+                  <form onSubmit={handleSignInWithPassword}>
                     <label>
-                      邮箱验证码
+                      邮箱
                       <input
-                        inputMode="numeric"
-                        value={token}
-                        onChange={(event) =>
-                          setToken(
-                            event.target.value.replace(/\D/g, "").slice(0, 10),
-                          )
-                        }
-                        placeholder="输入验证码"
-                        maxLength={10}
-                        pattern="[0-9]{6,10}"
+                        type="email"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                        placeholder="name@example.com"
+                        autoComplete="email"
                         disabled={busy}
                         required
                       />
                     </label>
-                  ) : null}
-                  <button type="submit" disabled={busy}>
-                    {busy ? "处理中…" : otpSent ? "完成登录" : "发送验证码"}
-                  </button>
-                </form>
+                    <label>
+                      密码
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        placeholder="输入密码"
+                        autoComplete="current-password"
+                        disabled={busy}
+                        required
+                      />
+                    </label>
+                    <button type="submit" disabled={busy}>
+                      {busy ? "处理中…" : "使用密码登录"}
+                    </button>
+                    <p className="detail auth-hint">
+                      如果还没有设置密码，请先用一次邮箱验证码登录。
+                    </p>
+                  </form>
+                ) : (
+                  <form onSubmit={otpSent ? handleVerifyOtp : handleRequestOtp}>
+                    <label>
+                      邮箱
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                        placeholder="name@example.com"
+                        autoComplete="email"
+                        disabled={busy}
+                        required
+                      />
+                    </label>
+                    {otpSent ? (
+                      <label>
+                        邮箱验证码
+                        <input
+                          inputMode="numeric"
+                          value={token}
+                          onChange={(event) =>
+                            setToken(
+                              event.target.value
+                                .replace(/\D/g, "")
+                                .slice(0, 10),
+                            )
+                          }
+                          placeholder="输入验证码"
+                          maxLength={10}
+                          pattern="[0-9]{6,10}"
+                          disabled={busy}
+                          required
+                        />
+                      </label>
+                    ) : null}
+                    <button type="submit" disabled={busy}>
+                      {busy ? "处理中…" : otpSent ? "完成登录" : "发送验证码"}
+                    </button>
+                  </form>
+                )}
               </div>
             ) : (
               <div className="auth-card">

@@ -86,6 +86,40 @@ body {
   margin-top: 20px;
 }
 
+.auth-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 20px;
+  padding: 4px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.auth-mode-switch button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  color: #94a3b8;
+  background: transparent;
+  font-size: 13px;
+}
+
+.auth-mode-switch button.active {
+  color: #eff6ff;
+  background: rgba(37, 99, 235, 0.9);
+}
+
+.auth-mode-switch button:not(:disabled) {
+  cursor: pointer;
+}
+
+.auth-hint {
+  margin-top: -2px;
+}
+
 .auth-card label {
   display: grid;
   gap: 6px;

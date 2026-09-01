@@ -7,6 +7,7 @@ import {
   desktopChannels,
   removeWorkspaceInputSchema,
   requestOtpInputSchema,
+  signInWithPasswordInputSchema,
   setOpenAtLoginInputSchema,
   stopHostInputSchema,
   verifyOtpInputSchema,
@@ -55,6 +56,7 @@ const invocationChannels = [
   desktopChannels.getDesktopState,
   desktopChannels.requestOtp,
   desktopChannels.verifyOtp,
+  desktopChannels.signInWithPassword,
   desktopChannels.signOut,
   desktopChannels.chooseWorkspace,
   desktopChannels.removeWorkspace,
@@ -158,6 +160,12 @@ export function registerIpcController({
     z.tuple([verifyOtpInputSchema]),
     ActionResultSchema,
     handlers.verifyOtp,
+  );
+  register(
+    desktopChannels.signInWithPassword,
+    z.tuple([signInWithPasswordInputSchema]),
+    ActionResultSchema,
+    handlers.signInWithPassword,
   );
   register(
     desktopChannels.signOut,

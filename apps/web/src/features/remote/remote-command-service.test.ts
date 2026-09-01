@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RemoteEvent, RemoteThreadSnapshot } from "@codex-remote/protocol";
 import type { RemoteClient } from "./remote-client";
-import { enqueueAndWaitForEvent } from "./remote-command-service";
+import {
+  enqueueAndWaitForEvent,
+  REMOTE_COMMAND_RESPONSE_TIMEOUT_MS,
+} from "./remote-command-service";
 
 const snapshot: RemoteThreadSnapshot = {
   id: "thread-1",
@@ -114,5 +117,35 @@ describe("enqueueAndWaitForEvent", () => {
     ).rejects.toThrow("响应超时");
 
     expect(fixture.client.subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps waiting for a slow Host response beyond ten seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = createClient();
+      const waiting = enqueueAndWaitForEvent(
+        fixture.client,
+        {
+          type: "thread.read",
+          workspaceId: "workspace-1",
+          threadId: "thread-1",
+        },
+        acceptsSnapshot,
+      );
+
+      await vi.advanceTimersByTimeAsync(10_001);
+      fixture.emit({
+        type: "thread.snapshot",
+        requestMessageId: "request-1",
+        snapshot,
+      });
+
+      await expect(waiting).resolves.toMatchObject({
+        requestMessageId: "request-1",
+      });
+      expect(REMOTE_COMMAND_RESPONSE_TIMEOUT_MS).toBeGreaterThan(10_000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

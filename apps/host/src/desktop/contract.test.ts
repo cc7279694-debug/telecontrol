@@ -7,6 +7,7 @@ import {
   desktopApiMethodNames,
   removeWorkspaceInputSchema,
   requestOtpInputSchema,
+  signInWithPasswordInputSchema,
   setOpenAtLoginInputSchema,
   stopHostInputSchema,
   verifyOtpInputSchema,
@@ -121,6 +122,18 @@ describe("desktop contract", () => {
       }).success,
     ).toBe(true);
     expect(
+      signInWithPasswordInputSchema.safeParse({
+        email: "user@example.com",
+        password: "correct-horse-battery-staple",
+      }).success,
+    ).toBe(true);
+    expect(
+      signInWithPasswordInputSchema.safeParse({
+        email: "user@example.com",
+        password: "",
+      }).success,
+    ).toBe(false);
+    expect(
       verifyOtpInputSchema.safeParse({
         email: "user@example.com",
         token: "12345678",
@@ -170,6 +183,7 @@ describe("desktop contract", () => {
       "getDesktopState",
       "requestOtp",
       "verifyOtp",
+      "signInWithPassword",
       "signOut",
       "chooseWorkspace",
       "removeWorkspace",

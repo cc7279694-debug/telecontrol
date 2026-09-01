@@ -8,6 +8,7 @@ import {
   type HostSnapshot,
 } from "@codex-remote/protocol";
 import type { DeviceIdentityStore } from "../device/device-key-store";
+import { REMOTE_COMMAND_RESPONSE_TIMEOUT_MS } from "./remote-timeouts";
 
 export interface CommandReceipt {
   messageId: string;
@@ -285,7 +286,9 @@ export class BrowserRemoteClient implements RemoteClient {
     return this.enqueue({ type: "host.snapshot" });
   }
 
-  requestSnapshotAndWait(timeoutMs = 10_000): Promise<HostSnapshot> {
+  requestSnapshotAndWait(
+    timeoutMs = REMOTE_COMMAND_RESPONSE_TIMEOUT_MS,
+  ): Promise<HostSnapshot> {
     return new Promise<HostSnapshot>((resolve, reject) => {
       let requestMessageId: string | undefined;
       let earlyResponse:

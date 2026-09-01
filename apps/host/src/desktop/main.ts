@@ -335,6 +335,19 @@ if (process.argv.includes("--package-smoke")) {
           return { ok: false, message: "登录失败，请稍后重试" };
         }
       },
+      signInWithPassword: async ({ email, password }) => {
+        if (!authController) return unavailableActionResult;
+        try {
+          const result = await authController.signInWithPassword(
+            email,
+            password,
+          );
+          if (!result.ok) return result;
+          return await registerCurrentHost();
+        } catch {
+          return { ok: false, message: "密码登录失败，请稍后重试" };
+        }
+      },
       signOut: async () => {
         if (!authController) return unavailableActionResult;
         try {

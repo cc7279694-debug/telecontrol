@@ -84,6 +84,13 @@ export const verifyOtpInputSchema = z
   })
   .strict();
 
+export const signInWithPasswordInputSchema = z
+  .object({
+    email: z.string().trim().email().max(254),
+    password: z.string().min(1).max(512),
+  })
+  .strict();
+
 export const removeWorkspaceInputSchema = z
   .object({
     workspaceId: z.string().uuid(),
@@ -112,6 +119,7 @@ export const desktopApiMethodNames = [
   "getDesktopState",
   "requestOtp",
   "verifyOtp",
+  "signInWithPassword",
   "signOut",
   "chooseWorkspace",
   "removeWorkspace",
@@ -130,6 +138,7 @@ export const desktopChannels = {
   getDesktopState: "desktop:get-state",
   requestOtp: "desktop:request-otp",
   verifyOtp: "desktop:verify-otp",
+  signInWithPassword: "desktop:sign-in-with-password",
   signOut: "desktop:sign-out",
   chooseWorkspace: "desktop:choose-workspace",
   removeWorkspace: "desktop:remove-workspace",
@@ -148,6 +157,9 @@ export type DesktopState = z.infer<typeof DesktopStateSchema>;
 export type ActionResult = z.infer<typeof ActionResultSchema>;
 export type RequestOtpInput = z.infer<typeof requestOtpInputSchema>;
 export type VerifyOtpInput = z.infer<typeof verifyOtpInputSchema>;
+export type SignInWithPasswordInput = z.infer<
+  typeof signInWithPasswordInputSchema
+>;
 export type RemoveWorkspaceInput = z.infer<typeof removeWorkspaceInputSchema>;
 export type SetOpenAtLoginInput = z.infer<typeof setOpenAtLoginInputSchema>;
 export type StopHostInput = z.infer<typeof stopHostInputSchema>;
@@ -157,6 +169,7 @@ export type DesktopApi = {
   getDesktopState: () => Promise<DesktopState>;
   requestOtp: (input: RequestOtpInput) => Promise<ActionResult>;
   verifyOtp: (input: VerifyOtpInput) => Promise<ActionResult>;
+  signInWithPassword: (input: SignInWithPasswordInput) => Promise<ActionResult>;
   signOut: () => Promise<ActionResult>;
   chooseWorkspace: () => Promise<ActionResult>;
   removeWorkspace: (input: RemoveWorkspaceInput) => Promise<ActionResult>;

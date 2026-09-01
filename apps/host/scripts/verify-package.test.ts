@@ -12,8 +12,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { verifyPackage } from "./verify-package.js";
 
 const temporaryDirectories: string[] = [];
-const EXPECTED_VERSION = "0.1.12" as const;
-const EXPECTED_INSTALLER = "Codex-Remote-Host-0.1.12-Windows-x64.exe" as const;
+const EXPECTED_VERSION = "0.1.13" as const;
+const EXPECTED_INSTALLER = "Codex-Remote-Host-0.1.13-Windows-x64.exe" as const;
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
@@ -61,7 +61,7 @@ async function createFixture(options: {
   const appAsarFiles: Record<string, string | Buffer> = {
     "package.json": JSON.stringify({
       name: "@codex-remote/host",
-      version: "0.1.12",
+      version: "0.1.13",
     }),
     "dist/desktop/main.js": "export {};",
     "dist/desktop/preload.cjs": "module.exports = {};",
