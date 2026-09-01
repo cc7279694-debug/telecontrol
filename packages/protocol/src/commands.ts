@@ -27,6 +27,8 @@ export const remoteCommandSchema = z.discriminatedUnion("type", [
       workspaceId,
       threadId,
       text: z.string().min(1),
+      model: z.string().min(1).optional(),
+      reasoningEffort: z.string().min(1).optional(),
     })
     .strict(),
   z
@@ -55,6 +57,27 @@ export const workspaceSummarySchema = z
   .object({ id: z.string().min(1), name: z.string().min(1) })
   .strict();
 export type WorkspaceSummary = z.infer<typeof workspaceSummarySchema>;
+
+export const remoteReasoningEffortSchema = z
+  .object({
+    reasoningEffort: z.string().min(1),
+    description: z.string(),
+  })
+  .strict();
+export type RemoteReasoningEffort = z.infer<typeof remoteReasoningEffortSchema>;
+
+export const remoteModelSummarySchema = z
+  .object({
+    id: z.string().min(1),
+    model: z.string().min(1),
+    displayName: z.string().min(1),
+    description: z.string(),
+    isDefault: z.boolean(),
+    defaultReasoningEffort: z.string().min(1),
+    reasoningEfforts: z.array(remoteReasoningEffortSchema),
+  })
+  .strict();
+export type RemoteModelSummary = z.infer<typeof remoteModelSummarySchema>;
 
 export const remoteThreadSummarySchema = z
   .object({
@@ -101,6 +124,7 @@ export const hostSnapshotSchema = z
     online: z.boolean(),
     observedAt: isoDate,
     workspaces: z.array(workspaceSummarySchema),
+    models: z.array(remoteModelSummarySchema).optional(),
   })
   .strict();
 export type HostSnapshot = z.infer<typeof hostSnapshotSchema>;

@@ -5,11 +5,13 @@ import {
   type RemoteCommand,
   type RemoteEnvelope,
   type RemoteEvent,
+  type RemoteModelSummary,
 } from "@codex-remote/protocol";
 import { randomUUID } from "node:crypto";
 import type {
   ApprovalResponse,
   AuthorizedWorkspace,
+  CodexModel,
   InterruptTurnInput,
   ListThreadsInput,
   ReadThreadInput,
@@ -30,6 +32,7 @@ import type { ClaimedCommand, LinkedDevice } from "./supabase-transport.js";
 
 export interface RemoteCommandAdapter {
   listThreads(input: ListThreadsInput): Promise<ThreadSummary[]>;
+  listModels?(): Promise<CodexModel[]>;
   readThread(input: ReadThreadInput): Promise<ThreadSnapshot>;
   startThread(input: StartThreadInput): Promise<ThreadSnapshot>;
   resumeThread(input: ReadThreadInput): Promise<ThreadSnapshot>;
@@ -102,6 +105,7 @@ export class RemoteCommandRunner {
   private readonly removeApprovalHandler: () => void;
   private readonly removeNotificationHandler: () => void;
   private activeSession: ActiveSession | undefined;
+  private modelCatalogPromise: Promise<RemoteModelSummary[]> | undefined;
   private running = false;
 
   constructor(
@@ -127,15 +131,7 @@ export class RemoteCommandRunner {
     const payload = {
       type: "host.snapshot.result" as const,
       requestMessageId: randomUUID(),
-      snapshot: this.mapper.hostSnapshot({
-        hostId: this.options.hostId,
-        name: this.options.hostName,
-        online: true,
-        workspaces: this.options.authorizedWorkspaces.map(({ id, name }) => ({
-          id,
-          name: name ?? id,
-        })),
-      }),
+      snapshot: await this.buildHostSnapshot(),
     };
     const envelope = await sealRemotePayload({
       key,
@@ -308,17 +304,7 @@ export class RemoteCommandRunner {
         return {
           type: "host.snapshot.result",
           requestMessageId: this.requireSession().requestMessageId,
-          snapshot: this.mapper.hostSnapshot({
-            hostId: this.options.hostId,
-            name: this.options.hostName,
-            online: true,
-            workspaces: this.options.authorizedWorkspaces.map(
-              ({ id, name }) => ({
-                id,
-                name: name ?? id,
-              }),
-            ),
-          }),
+          snapshot: await this.buildHostSnapshot(),
         };
       case "thread.list": {
         const threads = await this.adapter.listThreads({
@@ -392,6 +378,10 @@ export class RemoteCommandRunner {
           workspaceId: command.workspaceId,
           threadId: command.threadId,
           text: command.text,
+          ...(command.model ? { model: command.model } : {}),
+          ...(command.reasoningEffort
+            ? { reasoningEffort: command.reasoningEffort }
+            : {}),
         });
         this.options.threadStore.updateState(
           command.threadId,
@@ -428,6 +418,52 @@ export class RemoteCommandRunner {
           status: "completed",
         };
     }
+  }
+
+  private async buildHostSnapshot() {
+    const models = await this.modelCatalog();
+    return this.mapper.hostSnapshot({
+      hostId: this.options.hostId,
+      name: this.options.hostName,
+      online: true,
+      workspaces: this.options.authorizedWorkspaces.map(({ id, name }) => ({
+        id,
+        name: name ?? id,
+      })),
+      ...(models.length > 0 ? { models } : {}),
+    });
+  }
+
+  private async modelCatalog(): Promise<RemoteModelSummary[]> {
+    if (!this.modelCatalogPromise) {
+      this.modelCatalogPromise = (async () => {
+        if (!this.adapter.listModels) return [];
+        try {
+          const models = await this.adapter.listModels();
+          return models
+            .filter(
+              (model) =>
+                !model.hidden &&
+                model.id.length > 0 &&
+                model.model.length > 0 &&
+                model.displayName.length > 0 &&
+                model.defaultReasoningEffort.length > 0,
+            )
+            .map((model) => ({
+              id: model.id,
+              model: model.model,
+              displayName: model.displayName,
+              description: model.description,
+              isDefault: model.isDefault,
+              defaultReasoningEffort: model.defaultReasoningEffort,
+              reasoningEfforts: model.supportedReasoningEfforts,
+            }));
+        } catch {
+          return [];
+        }
+      })();
+    }
+    return this.modelCatalogPromise;
   }
 
   private threadSnapshotEvent(

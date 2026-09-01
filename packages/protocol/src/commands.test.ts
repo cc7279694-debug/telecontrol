@@ -2,6 +2,67 @@ import { describe, expect, it } from "vitest";
 import { remoteCommandSchema, remoteEventSchema } from "./commands.js";
 
 describe("remote commands", () => {
+  it("accepts model and reasoning settings for a new turn", () => {
+    expect(
+      remoteCommandSchema.parse({
+        type: "turn.start",
+        workspaceId: "workbench",
+        threadId: "thread-1",
+        text: "检查项目状态",
+        model: "gpt-5.5",
+        reasoningEffort: "high",
+      }),
+    ).toEqual({
+      type: "turn.start",
+      workspaceId: "workbench",
+      threadId: "thread-1",
+      text: "检查项目状态",
+      model: "gpt-5.5",
+      reasoningEffort: "high",
+    });
+  });
+
+  it("accepts a Host snapshot with a model catalog", () => {
+    expect(
+      remoteEventSchema.parse({
+        type: "host.snapshot.result",
+        requestMessageId: "00000000-0000-4000-8000-000000000001",
+        snapshot: {
+          hostId: "host-1",
+          name: "开发电脑",
+          online: true,
+          observedAt: new Date().toISOString(),
+          workspaces: [],
+          models: [
+            {
+              id: "gpt-5.5",
+              model: "gpt-5.5",
+              displayName: "GPT-5.5",
+              description: "通用模型",
+              isDefault: true,
+              defaultReasoningEffort: "medium",
+              reasoningEfforts: [
+                { reasoningEffort: "medium", description: "平衡" },
+                { reasoningEffort: "high", description: "更深入" },
+              ],
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      snapshot: {
+        models: expect.arrayContaining([
+          expect.objectContaining({
+            model: "gpt-5.5",
+            reasoningEfforts: expect.arrayContaining([
+              expect.objectContaining({ reasoningEffort: "medium" }),
+            ]),
+          }),
+        ]),
+      },
+    });
+  });
+
   it("accepts a turn command that addresses a workspace by id", () => {
     expect(
       remoteCommandSchema.parse({

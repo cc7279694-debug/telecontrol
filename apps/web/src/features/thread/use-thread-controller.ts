@@ -19,7 +19,7 @@ export interface ThreadControllerState {
   error: string | null;
   refresh: () => Promise<RemoteThreadSnapshot>;
   resume: () => Promise<RemoteThreadSnapshot>;
-  send: (text: string) => Promise<void>;
+  send: (text: string, options?: TurnOptions) => Promise<void>;
   stop: () => Promise<void>;
   respondApproval: (
     requestId: string | number,
@@ -28,6 +28,11 @@ export interface ThreadControllerState {
       { type: "approval.request" }
     >["allowedDecisions"][number],
   ) => Promise<void>;
+}
+
+export interface TurnOptions {
+  model?: string;
+  reasoningEffort?: string;
 }
 
 export function useThreadController(
@@ -113,7 +118,7 @@ export function useThreadController(
     }
   }
 
-  async function send(text: string): Promise<void> {
+  async function send(text: string, options?: TurnOptions): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed) {
       throw new Error("请输入内容");
@@ -146,6 +151,10 @@ export function useThreadController(
           workspaceId: input.workspaceId,
           threadId: input.threadId,
           text: trimmed,
+          ...(options?.model ? { model: options.model } : {}),
+          ...(options?.reasoningEffort
+            ? { reasoningEffort: options.reasoningEffort }
+            : {}),
         });
       }
     } catch (caught) {

@@ -1,3 +1,4 @@
+import React, { useState } from "react";
 import type { DesktopState } from "../desktop/contract.js";
 
 type WorkspacesScreenProps = {
@@ -13,6 +14,10 @@ export function WorkspacesScreen({
   onChoose,
   onRemove,
 }: WorkspacesScreenProps) {
+  const [confirmingWorkspaceId, setConfirmingWorkspaceId] = useState<
+    string | null
+  >(null);
+
   return (
     <section className="feature-card" aria-labelledby="workspaces-title">
       <div className="section-heading">
@@ -34,14 +39,41 @@ export function WorkspacesScreen({
                 <strong>{workspace.name}</strong>
                 <span>{workspace.path}</span>
               </div>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => onRemove(workspace.id)}
-                disabled={disabled}
-              >
-                移除
-              </button>
+              {confirmingWorkspaceId === workspace.id ? (
+                <div className="workspace-actions">
+                  <span className="workspace-confirmation">
+                    确定移除“{workspace.name}”？
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => {
+                      setConfirmingWorkspaceId(null);
+                      onRemove(workspace.id);
+                    }}
+                    disabled={disabled}
+                  >
+                    确认移除
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setConfirmingWorkspaceId(null)}
+                    disabled={disabled}
+                  >
+                    取消
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setConfirmingWorkspaceId(workspace.id)}
+                  disabled={disabled}
+                >
+                  移除
+                </button>
+              )}
             </li>
           ))}
         </ul>

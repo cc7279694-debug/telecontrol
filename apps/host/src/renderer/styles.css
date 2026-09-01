@@ -219,6 +219,19 @@ body {
   min-width: 0;
 }
 
+.workspace-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workspace-confirmation {
+  color: #fbbf24;
+  font-size: 12px;
+}
+
 .workspace-list strong,
 .workspace-list span {
   display: block;

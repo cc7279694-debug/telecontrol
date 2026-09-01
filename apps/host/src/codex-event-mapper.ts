@@ -8,6 +8,7 @@ import type {
 } from "./json-rpc-client.js";
 import type {
   HostSnapshot,
+  RemoteModelSummary,
   RemoteThreadSnapshot,
   RemoteThreadSummary,
   RemoteTimelineItem,
@@ -35,6 +36,7 @@ export class CodexEventMapper {
     name: string;
     workspaces: Array<{ id: string; name: string }>;
     online: boolean;
+    models?: RemoteModelSummary[];
   }): HostSnapshot {
     return {
       ...input,

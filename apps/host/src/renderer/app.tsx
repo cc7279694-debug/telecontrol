@@ -167,7 +167,7 @@ export function App() {
   }
 
   async function handleRemoveWorkspace(workspaceId: string) {
-    if (busy || !window.confirm("确定要移除这个项目授权吗？")) return;
+    if (busy) return;
     setBusy(true);
     try {
       const result = await window.codexRemoteHost.removeWorkspace({

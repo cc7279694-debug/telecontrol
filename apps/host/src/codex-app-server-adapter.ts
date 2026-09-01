@@ -45,6 +45,8 @@ export interface StartTurnInput {
   threadId: string;
   workspaceId: string;
   text: string;
+  model?: string;
+  reasoningEffort?: string;
 }
 
 export interface SteerTurnInput extends StartTurnInput {
@@ -77,6 +79,26 @@ interface ThreadListResult {
   data?: ThreadSummary[];
 }
 
+export interface CodexReasoningEffortOption {
+  reasoningEffort: string;
+  description: string;
+}
+
+export interface CodexModel {
+  id: string;
+  model: string;
+  displayName: string;
+  description: string;
+  hidden: boolean;
+  isDefault: boolean;
+  defaultReasoningEffort: string;
+  supportedReasoningEfforts: CodexReasoningEffortOption[];
+}
+
+interface ModelListResult {
+  data?: CodexModel[];
+}
+
 const approvalRequestMethods = new Set([
   "item/commandExecution/requestApproval",
   "item/fileChange/requestApproval",
@@ -107,6 +129,12 @@ export class CodexAppServerAdapter {
         ...(input.cursor ? { cursor: input.cursor } : {}),
         cwd: workspace.path,
       })
+      .then((result) => result.data ?? []);
+  }
+
+  async listModels(): Promise<CodexModel[]> {
+    return this.client
+      .request<ModelListResult>("model/list", { includeHidden: false })
       .then((result) => result.data ?? []);
   }
 
@@ -150,6 +178,8 @@ export class CodexAppServerAdapter {
         threadId: input.threadId,
         input: [this.textInput(input.text)],
         cwd: workspace.path,
+        ...(input.model ? { model: input.model } : {}),
+        ...(input.reasoningEffort ? { effort: input.reasoningEffort } : {}),
         ...this.executionPolicy(workspace),
       })
       .then((result) => {

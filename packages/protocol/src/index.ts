@@ -2,6 +2,8 @@ export {
   remoteCommandSchema,
   remoteEventSchema,
   hostSnapshotSchema,
+  remoteModelSummarySchema,
+  remoteReasoningEffortSchema,
   remoteThreadSnapshotSchema,
   remoteThreadSummarySchema,
   remoteTimelineItemSchema,
@@ -14,6 +16,8 @@ export {
   type RemoteThreadSummary,
   type RemoteTimelineItem,
   type WorkspaceSummary,
+  type RemoteModelSummary,
+  type RemoteReasoningEffort,
 } from "./commands.js";
 export {
   decryptJson,

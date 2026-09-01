@@ -6,6 +6,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThreadComposer } from "./thread-composer";
+import type { RemoteModelSummary } from "@codex-remote/protocol";
 
 afterEach(cleanup);
 
@@ -57,5 +58,54 @@ describe("ThreadComposer", () => {
     expect(
       screen.getByText("Enter 发送 · Shift+Enter 换行"),
     ).toBeInTheDocument();
+  });
+
+  it("lets the user choose a model and reasoning effort for a new turn", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn(async () => undefined);
+    const models: RemoteModelSummary[] = [
+      {
+        id: "gpt-5.5",
+        model: "gpt-5.5",
+        displayName: "GPT-5.5",
+        description: "通用模型",
+        isDefault: true,
+        defaultReasoningEffort: "medium",
+        reasoningEfforts: [
+          { reasoningEffort: "medium", description: "平衡" },
+          { reasoningEffort: "high", description: "更深入" },
+        ],
+      },
+    ];
+    render(
+      <ThreadComposer
+        disabled={false}
+        pending={false}
+        activeTurn={false}
+        models={models}
+        onSend={onSend}
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: "模型" })).toHaveValue(
+      "gpt-5.5",
+    );
+    expect(screen.getByRole("combobox", { name: "思考程度" })).toHaveValue(
+      "medium",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "思考程度" }),
+      "high",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "输入指令" }),
+      "检查状态",
+    );
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(onSend).toHaveBeenCalledWith("检查状态", {
+      model: "gpt-5.5",
+      reasoningEffort: "high",
+    });
   });
 });

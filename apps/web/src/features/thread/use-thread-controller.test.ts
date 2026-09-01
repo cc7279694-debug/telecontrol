@@ -100,13 +100,18 @@ describe("useThreadController", () => {
       }),
     );
 
-    await view.result.current.send("请继续检查");
+    await view.result.current.send("请继续检查", {
+      model: "gpt-5.5",
+      reasoningEffort: "high",
+    });
 
     expect(remote.client.enqueue).toHaveBeenCalledWith({
       type: "turn.start",
       workspaceId: "workspace-1",
       threadId: "thread-1",
       text: "请继续检查",
+      model: "gpt-5.5",
+      reasoningEffort: "high",
     });
   });
 

@@ -102,6 +102,54 @@ describe("CodexAppServerAdapter", () => {
     await expect(resultPromise).resolves.toEqual({ id: "turn-1" });
   });
 
+  it("lists the available models and sends selected reasoning settings", async () => {
+    const channel = new FakeLineChannel();
+    const adapter = new CodexAppServerAdapter(new JsonRpcClient(channel), {
+      authorizedWorkspaces: [workspace],
+    });
+
+    const modelsPromise = adapter.listModels();
+    expect(JSON.parse(channel.writes[0])).toEqual({
+      id: 1,
+      method: "model/list",
+      params: { includeHidden: false },
+    });
+    channel.push({
+      id: 1,
+      result: {
+        data: [
+          {
+            id: "gpt-5.5",
+            model: "gpt-5.5",
+            displayName: "GPT-5.5",
+            description: "通用模型",
+            hidden: false,
+            isDefault: true,
+            defaultReasoningEffort: "medium",
+            supportedReasoningEfforts: [
+              { reasoningEffort: "medium", description: "平衡" },
+            ],
+          },
+        ],
+      },
+    });
+    await expect(modelsPromise).resolves.toHaveLength(1);
+
+    const turnPromise = adapter.startTurn({
+      threadId: "thread-1",
+      workspaceId: "workbench",
+      text: "继续检查",
+      model: "gpt-5.5",
+      reasoningEffort: "high",
+    });
+    expect(JSON.parse(channel.writes[1])).toMatchObject({
+      method: "turn/start",
+      params: { model: "gpt-5.5", effort: "high" },
+    });
+    channel.push({ id: 2, result: { turn: { id: "turn-2" } } });
+    await expect(turnPromise).resolves.toEqual({ id: "turn-2" });
+  });
+
   it("uses the official thread policy fields for new and resumed threads", async () => {
     const channel = new FakeLineChannel();
     const adapter = new CodexAppServerAdapter(new JsonRpcClient(channel), {

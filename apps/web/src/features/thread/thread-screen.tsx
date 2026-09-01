@@ -278,6 +278,8 @@ function ConnectedThreadScreen({
             state: snapshot.state,
           })}
           pending={controller.pending}
+          activeTurn={Boolean(snapshot.activeTurnId)}
+          models={remoteState.hostSnapshot?.models ?? []}
           onSend={controller.send}
         />
       </div>

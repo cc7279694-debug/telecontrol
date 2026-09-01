@@ -68,6 +68,7 @@ function createAdapter(): RemoteCommandAdapter & {
       .fn()
       .mockResolvedValue({ id: "thread-1", status: "completed" }),
     startTurn: vi.fn().mockResolvedValue({ id: "turn-1" }),
+    listModels: vi.fn().mockResolvedValue([]),
     steerTurn: vi.fn().mockResolvedValue(undefined),
     interruptTurn: vi.fn().mockResolvedValue(undefined),
     resolveApproval: vi.fn().mockResolvedValue(undefined),
@@ -215,6 +216,57 @@ describe("RemoteCommandRunner", () => {
       { messageId: transport.claimed?.message_id, status: "completed" },
     ]);
     expect(transport.sentEvents).toHaveLength(1);
+  });
+
+  it("forwards selected model settings to a new Codex turn", async () => {
+    const { runner, adapter } = await createRunner(
+      {
+        type: "turn.start",
+        workspaceId: "workspace-1",
+        threadId: "thread-1",
+        text: "使用更深入的思考检查",
+        model: "gpt-5.5",
+        reasoningEffort: "high",
+      },
+      (store) => store.markHostOwned("thread-1", "workspace-1", "idle"),
+    );
+
+    await runner.runOnce();
+
+    expect(adapter.startTurn).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      threadId: "thread-1",
+      text: "使用更深入的思考检查",
+      model: "gpt-5.5",
+      reasoningEffort: "high",
+    });
+  });
+
+  it("loads the model catalog when publishing a Host snapshot", async () => {
+    const result = await createRunner(
+      { type: "host.snapshot" },
+      (_store, adapter) => {
+        vi.mocked(adapter.listModels!).mockResolvedValue([
+          {
+            id: "gpt-5.5",
+            model: "gpt-5.5",
+            displayName: "GPT-5.5",
+            description: "通用模型",
+            hidden: false,
+            isDefault: true,
+            defaultReasoningEffort: "medium",
+            supportedReasoningEfforts: [
+              { reasoningEffort: "medium", description: "平衡" },
+            ],
+          },
+        ]);
+      },
+    );
+
+    await result.runner.runOnce();
+
+    expect(result.adapter.listModels).toHaveBeenCalledOnce();
+    expect(result.transport.sentEvents).toHaveLength(1);
   });
 
   it("rejects an external running thread without calling the adapter", async () => {
