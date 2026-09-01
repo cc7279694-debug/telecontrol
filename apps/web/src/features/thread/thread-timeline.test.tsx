@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -40,6 +41,19 @@ describe("ThreadTimeline", () => {
 
   it("shows an empty state when no task content exists", () => {
     render(<ThreadTimeline items={[]} streamText="" />);
-    expect(screen.getByText("暂无任务内容")).toBeTruthy();
+    const emptyState = screen.getByRole("status");
+    expect(emptyState).toHaveTextContent("暂无任务内容");
+    expect(emptyState).toHaveTextContent("在下方输入指令，开始与 Codex 协作");
+  });
+
+  it("keeps long messages readable inside bounded bubbles", () => {
+    render(
+      <ThreadTimeline
+        items={[{ id: "user-1", role: "user", kind: "text", text: "请检查" }]}
+        streamText=""
+      />,
+    );
+
+    expect(screen.getByText("请检查")).toHaveClass("break-words");
   });
 });

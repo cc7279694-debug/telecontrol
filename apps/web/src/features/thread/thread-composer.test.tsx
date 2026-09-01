@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -35,5 +36,26 @@ describe("ThreadComposer", () => {
       (screen.getByRole("button", { name: "发送中" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+
+  it("explains why a read-only composer cannot be used", () => {
+    render(<ThreadComposer disabled={true} pending={false} onSend={vi.fn()} />);
+
+    expect(
+      screen.getByText("连接主机或恢复任务后可继续操作"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送" })).toHaveClass(
+      "min-w-[72px]",
+    );
+  });
+
+  it("shows keyboard guidance when the composer is writable", () => {
+    render(
+      <ThreadComposer disabled={false} pending={false} onSend={vi.fn()} />,
+    );
+
+    expect(
+      screen.getByText("Enter 发送 · Shift+Enter 换行"),
+    ).toBeInTheDocument();
   });
 });
