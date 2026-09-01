@@ -8,6 +8,7 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { useRemote } from "../remote/remote-client-context";
+import { useRemoteSession } from "../session/remote-session-context";
 import { ApprovalCard } from "./approval-card";
 import { ThreadComposer } from "./thread-composer";
 import { ThreadTimeline } from "./thread-timeline";
@@ -15,6 +16,86 @@ import { useThreadController } from "./use-thread-controller";
 import { StopTurnDialog } from "./stop-turn-dialog";
 
 export function ThreadScreen({
+  hostId,
+  threadId,
+  workspaceId,
+}: {
+  hostId: string;
+  threadId: string;
+  workspaceId: string;
+}) {
+  const { state: session, retryConnection } = useRemoteSession();
+
+  if (session.status === "loading") {
+    return (
+      <AppShell action={false}>
+        <Card>
+          <CardContent className="p-6 sm:p-8">
+            <p
+              className="text-sm text-zinc-600 dark:text-zinc-400"
+              role="status"
+            >
+              正在连接电脑…
+            </p>
+          </CardContent>
+        </Card>
+      </AppShell>
+    );
+  }
+
+  if (session.status === "unpaired") {
+    return (
+      <AppShell action={false}>
+        <Card>
+          <CardContent className="p-6 sm:p-8">
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              还没有连接电脑
+            </p>
+            <Link
+              className="mt-5 inline-flex min-h-11 items-center rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+              href="/pair"
+            >
+              添加电脑
+            </Link>
+          </CardContent>
+        </Card>
+      </AppShell>
+    );
+  }
+
+  if (session.status === "error") {
+    return (
+      <AppShell action={false}>
+        <Card>
+          <CardContent className="p-6 sm:p-8">
+            <p className="text-sm text-red-700 dark:text-red-300" role="alert">
+              {session.message}
+            </p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Button onClick={retryConnection}>重新连接</Button>
+              <Link
+                className="inline-flex min-h-11 items-center rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                href="/pair"
+              >
+                重新配对
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </AppShell>
+    );
+  }
+
+  return (
+    <ConnectedThreadScreen
+      hostId={hostId}
+      threadId={threadId}
+      workspaceId={workspaceId}
+    />
+  );
+}
+
+function ConnectedThreadScreen({
   hostId,
   threadId,
   workspaceId,
